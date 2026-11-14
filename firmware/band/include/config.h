@@ -1,9 +1,10 @@
 #pragma once
 
-// ESP32-S3-DevKitC-1 (USB-C, WROOM-1).
-// LSM6DS3 I2C is SDA GPIO5 and SCL GPIO6. INT1 is GPIO4.
-// Button GPIO2, battery sense GPIO3, firmware LED GPIO21 active low.
-// GPIO3 is a strapping pin; leave it as an input.
+// ESP32 DevKit V1 (WROOM-32, micro-USB).
+// LSM6DS3 I2C is SDA GPIO21 and SCL GPIO22. INT1 is GPIO4.
+// Button GPIO2. Battery sense GPIO34 (ADC1, input only).
+// Firmware LED GPIO13, active low. GPIO1 and GPIO3 stay with the USB serial bridge.
+// No vibration motor.
 
 // One sample-rate constant for the firmware. ml/features.py uses the same 104.0.
 constexpr float TB_FS_HZ = 104.0f;
@@ -11,15 +12,15 @@ constexpr float TB_FS_HZ = 104.0f;
 constexpr int TB_WINDOW_N = 256;
 constexpr int TB_HOP = 128;
 
-constexpr int TB_I2C_SDA_PIN = 5;
-constexpr int TB_I2C_SCL_PIN = 6;
+constexpr int TB_I2C_SDA_PIN = 21;
+constexpr int TB_I2C_SCL_PIN = 22;
 constexpr int TB_I2C_HZ = 400000;
 
 constexpr int TB_IMU_INT1_PIN = 4;
-constexpr int TB_MOTOR_PIN = 1;
+constexpr int TB_MOTOR_PIN = 25;
 constexpr int TB_BUTTON_PIN = 2;
-constexpr int TB_BATTERY_PIN = 3;
-constexpr int TB_LED_PIN = 21;
+constexpr int TB_BATTERY_PIN = 34;
+constexpr int TB_LED_PIN = 13;
 
 constexpr float TB_HPF_HZ = 2.0f;
 constexpr float TB_HPF_HZ_MS = 1.5f;

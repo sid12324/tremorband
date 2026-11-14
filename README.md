@@ -179,15 +179,15 @@ python -m unittest tests.test_movement
 
 | Function | GPIO | Notes |
 | --- | --- | --- |
-| LSM6DS3 SDA | GPIO5 | 400 kHz I2C. Adafruit LSM6DS `LSM6DS3`, 104 Hz, accel ±4 g, gyro ±500 dps |
-| LSM6DS3 SCL | GPIO6 | 400 kHz I2C, with SDA |
+| LSM6DS3 SDA | GPIO21 | 400 kHz I2C. Adafruit LSM6DS `LSM6DS3`, 104 Hz, accel ±4 g, gyro ±500 dps |
+| LSM6DS3 SCL | GPIO22 | 400 kHz I2C, with SDA |
 | LSM6DS3 INT1 | GPIO4 | Optional data-ready interrupt |
 | Button | GPIO2 | INPUT_PULLUP. Long press is longer than 1.5 s |
-| Battery sense | GPIO3 | Two 220 kOhm resistors. GPIO3 is a strapping pin, so the divider is configurable in `config.h` |
-| Firmware LED | GPIO21 | Active low |
+| Battery sense | GPIO34 | ADC1, input only. Two 220 kOhm resistors. The divider pin is `TB_BATTERY_PIN` in `config.h` |
+| Firmware LED | GPIO13 | Active low. GPIO1 and GPIO3 stay with the micro-USB serial bridge |
 | Rig servo | Pin 9 on the servo board | Separate 5 V supply and a common ground |
 
-The band board is an ESP32-S3-DevKitC-1 (USB-C, WROOM-1). The wrist IMU is an LSM6DS3 on GPIO5 (SDA) and GPIO6 (SCL). `TB_IMU_DRIVER=TB_IMU_MPU6050` selects the MPU6050 fallback. This band has no vibration motor. The same names live in `firmware/band/include/config.h`.
+The band board is an ESP32 DevKit V1 (WROOM-32, micro-USB). The wrist IMU is an LSM6DS3 on GPIO21 (SDA) and GPIO22 (SCL). `TB_IMU_DRIVER=TB_IMU_MPU6050` selects the MPU6050 fallback. This band has no vibration motor. The same names live in `firmware/band/include/config.h`.
 
 ## Setup
 
