@@ -11,6 +11,7 @@ type SessionRow = {
   is_synthetic: boolean;
 };
 type PassiveRow = { id: number; ts: string; tremor_pct: number; median_hz: number; activity: number };
+type TremorDay = { day: string; tremor_hours: number };
 
 const TESTS = [
   { id: "rest", label: "Rest", seconds: 20 },
@@ -30,17 +31,19 @@ export default function Tests() {
   const [deviceId, setDeviceId] = useState("");
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [passive, setPassive] = useState<PassiveRow[]>([]);
+  const [hours, setHours] = useState<TremorDay[]>([]);
   const [left, setLeft] = useState(0);
   const [running, setRunning] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
-    const [deviceResponse, sessionResponse, passiveResponse] = await Promise.all([
+    const [deviceResponse, sessionResponse, passiveResponse, hoursResponse] = await Promise.all([
       fetch("/api/devices"),
       fetch("/api/sessions?days=2"),
       fetch("/api/passive?days=1"),
+      fetch("/api/analytics/tremor-hours?days=1"),
     ]);
-    if (!deviceResponse.ok || !sessionResponse.ok || !passiveResponse.ok) {
+    if (!deviceResponse.ok || !sessionResponse.ok || !passiveResponse.ok || !hoursResponse.ok) {
       throw new Error("The test list could not be loaded.");
     }
     const nextDevices = (await deviceResponse.json()) as Device[];
@@ -48,6 +51,7 @@ export default function Tests() {
     setDeviceId((current) => current || nextDevices[0]?.id || "");
     setSessions((await sessionResponse.json()) as SessionRow[]);
     setPassive((await passiveResponse.json()) as PassiveRow[]);
+    setHours((await hoursResponse.json()) as TremorDay[]);
   }
 
   useEffect(() => {
@@ -93,7 +97,7 @@ export default function Tests() {
   for (const row of sessions) {
     latest.set(row.test_type, row);
   }
-  const today = passive.reduce((sum, row) => sum + Math.max(row.tremor_pct, 0) / 100, 0);
+  const todayHours = hours.reduce((sum, row) => sum + row.tremor_hours, 0);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-6 sm:px-6">
@@ -168,8 +172,7 @@ export default function Tests() {
         <section>
           <h2 className="text-2xl font-bold">Passive monitoring</h2>
           <p className="text-lg">
-            Summaries today: {passive.length}. Rough tremor time if each summary were an hour: {today.toFixed(2)} h.
-            The Trends page uses the gap between summaries, up to one hour.
+            Summaries in the last day: {passive.length}. Tremor time from those gaps: {todayHours.toFixed(2)} h.
           </p>
         </section>
       </main>
