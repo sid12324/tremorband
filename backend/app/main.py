@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.db import init_db
 from app.live import live_hub
-from app.routes import analytics, devices, ingest, live, rig
+from app.routes import analytics, devices, ingest, live, planner, rig
 
 logging.basicConfig(
     level=logging.INFO,
@@ -80,6 +80,7 @@ app.include_router(devices.router)
 app.include_router(live.router)
 app.include_router(rig.router)
 app.include_router(analytics.router)
+app.include_router(planner.router)
 
 
 @app.get("/api/health")

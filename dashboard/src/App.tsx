@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import Agent from "./pages/Agent";
 import Calibration from "./pages/Calibration";
 import Live from "./pages/Live";
 import Log from "./pages/Log";
+import Report from "./pages/Report";
 import Trends from "./pages/Trends";
 
-type PageName = "live" | "calibration" | "trends" | "log";
+type PageName = "live" | "calibration" | "trends" | "log" | "agent" | "report";
 
 function pageFromHash(): PageName {
   const hash = window.location.hash.replace(/^#/, "");
@@ -16,6 +18,12 @@ function pageFromHash(): PageName {
   }
   if (hash === "/log" || hash === "log") {
     return "log";
+  }
+  if (hash === "/agent" || hash === "agent") {
+    return "agent";
+  }
+  if (hash === "/report" || hash.startsWith("/report/") || hash === "report") {
+    return "report";
   }
   return "live";
 }
@@ -53,11 +61,19 @@ export default function App() {
         <a href="#/log" className={linkClass("log")} aria-current={page === "log" ? "page" : undefined}>
           Log
         </a>
+        <a href="#/agent" className={linkClass("agent")} aria-current={page === "agent" ? "page" : undefined}>
+          Agent
+        </a>
+        <a href="#/report" className={linkClass("report")} aria-current={page === "report" ? "page" : undefined}>
+          Report
+        </a>
       </nav>
       {page === "live" ? <Live /> : null}
       {page === "calibration" ? <Calibration /> : null}
       {page === "trends" ? <Trends /> : null}
       {page === "log" ? <Log /> : null}
+      {page === "agent" ? <Agent /> : null}
+      {page === "report" ? <Report /> : null}
     </>
   );
 }
