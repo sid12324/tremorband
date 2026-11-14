@@ -1,0 +1,20 @@
+[project]
+name = "tremorband-backend"
+version = "0.1.0"
+description = "TremorBand monitoring API. A monitoring aid, not a diagnostic device."
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.162.7",
+  "httpx==0.28.1",
+  "pydantic==2.14.3",
+  "sqlmodel==0.0.50",
+  "uvicorn[standard]==0.54.0",
+]
+
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
