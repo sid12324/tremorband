@@ -1,4 +1,4 @@
-#include "signal.h"
+#include "window_features.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"

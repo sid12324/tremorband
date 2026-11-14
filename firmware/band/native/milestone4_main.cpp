@@ -1,7 +1,7 @@
 #include "comms.h"
 #include "config.h"
 #include "haptics.h"
-#include "signal.h"
+#include "window_features.h"
 #include "tests.h"
 
 #include <cmath>

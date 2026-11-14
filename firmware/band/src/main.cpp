@@ -2,7 +2,7 @@
 #include "config.h"
 #include "haptics.h"
 #include "imu.h"
-#include "signal.h"
+#include "window_features.h"
 #include "tests.h"
 
 #include <Arduino.h>

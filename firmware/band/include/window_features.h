@@ -1,5 +1,8 @@
 #pragma once
 
+// Named window_features.h, not signal.h. A header named signal.h shadows the
+// C library header and is parsed with C linkage from the ESP32 Arduino core.
+
 #include <vector>
 
 // Window features for one accel stream and one gyro stream.

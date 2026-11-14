@@ -1,7 +1,7 @@
 #pragma once
 
 #include "haptics.h"
-#include "signal.h"
+#include "window_features.h"
 
 #include <stdint.h>
 #include <vector>
