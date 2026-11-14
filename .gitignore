@@ -17,6 +17,8 @@ dist/
 
 .DS_Store
 firmware/band/include/secrets.h
+firmware/band/.pio/
+firmware/band/build-host/
 
 ml/data/*
 !ml/data/.gitkeep
