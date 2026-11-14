@@ -45,7 +45,7 @@ int main() {
     ok &= expect(std::string(label.label) == "tremor", "5 Hz stream was not tremor");
     ok &= expect(std::fabs(last.gyro.peak_hz - 5.0) < 0.05, "5 Hz peak missed");
     char json[640];
-    const int wrote = format_window_json(json, sizeof(json), TB_DEVICE_ID, 1000, last, label);
+    const int wrote = format_window_json(json, sizeof(json), TB_DEVICE_ID, 1000, last, label, false, nullptr);
     ok &= expect(wrote > 0, "json format failed");
     ok &= expect(std::string(json).find("\"label\":\"tremor\"") != std::string::npos, "json missing tremor");
     std::cout << json << "\n";

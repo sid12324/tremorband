@@ -45,6 +45,15 @@ struct ActivityLabel {
 
 ActivityLabel rule_label(const WindowFeatures& row);
 
+// Runtime copies of the rule thresholds. set_threshold updates these.
+struct ThresholdOverrides {
+  double still_acc_rms;
+  double still_gyro_rms;
+  double tremor_sharpness;
+};
+
+ThresholdOverrides& threshold_overrides();
+
 // Majority of the last three raw labels. A new label is adopted only when it
 // has at least two votes, so one odd window does not flip the displayed label.
 class LabelSmoother {
@@ -52,6 +61,7 @@ class LabelSmoother {
   LabelSmoother();
   ActivityLabel push_raw(const char* label, double tremor_score);
   ActivityLabel update(const WindowFeatures& row);
+  ActivityLabel hold() const;
 
  private:
   int raw_[3];
@@ -69,6 +79,10 @@ class WindowPipeline {
   WindowPipeline& operator=(const WindowPipeline&) = delete;
   bool push(double ax, double ay, double az, double gx, double gy, double gz, WindowFeatures& row,
             ActivityLabel& label);
+  // sample_vibrating is true while the motor is driven. The completed window is
+  // flagged and does not move the smoothed label.
+  bool push(double ax, double ay, double az, double gx, double gy, double gz, WindowFeatures& row,
+            ActivityLabel& label, bool sample_vibrating, bool& window_vibrating);
 
  private:
   struct State;
@@ -77,4 +91,5 @@ class WindowPipeline {
 
 // One serial JSON object, without a newline. Returns the length, or -1.
 int format_window_json(char* dest, int capacity, const char* device_id, long long ts_us,
-                       const WindowFeatures& row, const ActivityLabel& label);
+                       const WindowFeatures& row, const ActivityLabel& label, bool vibrating,
+                       const char* test_type);

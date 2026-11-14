@@ -68,6 +68,16 @@ python3 -m unittest ml.tests.test_feature_parity
 
 The test compiles the firmware pipeline and checks it against `ml/features.py` on 3, 5, and 8 Hz sinusoids plus noise. It also checks the still, voluntary, and tremor rule.
 
+## Guided tests and Wi-Fi ingest
+
+From the repo root, with the API already running:
+
+```bash
+python3 -m unittest ml.tests.test_milestone4
+```
+
+That build runs the haptic patterns, the rest, postural, finger-to-nose, tapping, and gait sequence, and posts one ingest batch. A window recorded while the motor is on has `vibrating: true` and is left out of the session summary. On a flashed band the same commands are `run_test:rest`, `cancel_test`, and `vibrate:ALERT` over serial, or `GET /api/device/{id}/commands` over Wi-Fi. Copy `firmware/band/include/secrets.h.example` to `secrets.h` before enabling Wi-Fi. `secrets.h` stays untracked.
+
 ## Serial bridge
 
 From `backend/`, with the virtualenv activated and the API already running:

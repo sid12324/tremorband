@@ -2,6 +2,12 @@
 
 #include "config.h"
 
+ThresholdOverrides& threshold_overrides() {
+  static ThresholdOverrides values{static_cast<double>(TB_STILL_ACC_RMS), static_cast<double>(TB_STILL_GYRO_RMS),
+                                   static_cast<double>(TB_TREMOR_SHARPNESS)};
+  return values;
+}
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -267,7 +273,7 @@ bool in_tremor_band(double peak_hz) {
 }
 
 bool stream_is_tremor(const StreamFeatures& stream) {
-  return stream.sharpness >= static_cast<double>(TB_TREMOR_SHARPNESS) && in_tremor_band(stream.peak_hz);
+  return stream.sharpness >= threshold_overrides().tremor_sharpness && in_tremor_band(stream.peak_hz);
 }
 
 void require_same_length(const std::vector<double>& ax, const std::vector<double>& ay,
@@ -401,8 +407,7 @@ bool device_id_ok(const char* device_id) {
 
 ActivityLabel rule_label(const WindowFeatures& row) {
   ActivityLabel out{"still", 0.0};
-  if (row.acc.rms < static_cast<double>(TB_STILL_ACC_RMS) &&
-      row.gyro.rms < static_cast<double>(TB_STILL_GYRO_RMS)) {
+  if (row.acc.rms < threshold_overrides().still_acc_rms && row.gyro.rms < threshold_overrides().still_gyro_rms) {
     return out;
   }
   const bool acc = stream_is_tremor(row.acc);
@@ -469,6 +474,13 @@ ActivityLabel LabelSmoother::update(const WindowFeatures& row) {
   return push_raw(raw.label, raw.p_tremor);
 }
 
+ActivityLabel LabelSmoother::hold() const {
+  ActivityLabel out;
+  out.label = current_ < 0 ? "still" : label_name(current_);
+  out.p_tremor = current_ == 2 ? last_score_ : 0.0;
+  return out;
+}
+
 struct WindowPipeline::State {
   Biquad acc_hp;
   Biquad acc_lp;
@@ -476,6 +488,7 @@ struct WindowPipeline::State {
   Biquad gyro_lp;
   std::vector<double> acc;
   std::vector<double> gyro;
+  std::vector<char> vibrating;
   int count;
   LabelSmoother smoother;
 };
@@ -483,6 +496,7 @@ struct WindowPipeline::State {
 WindowPipeline::WindowPipeline()
     : state_(new State{make_biquad(make_hpf(TB_HPF_HZ, TB_FS_HZ)), make_biquad(make_lpf(TB_LPF_HZ, TB_FS_HZ)),
                        make_biquad(make_hpf(TB_HPF_HZ, TB_FS_HZ)), make_biquad(make_lpf(TB_LPF_HZ, TB_FS_HZ)),
+                       {},
                        {},
                        {},
                        0,
@@ -495,6 +509,12 @@ WindowPipeline::~WindowPipeline() { delete state_; }
 
 bool WindowPipeline::push(double ax, double ay, double az, double gx, double gy, double gz, WindowFeatures& row,
                           ActivityLabel& label) {
+  bool ignored = false;
+  return push(ax, ay, az, gx, gy, gz, row, label, false, ignored);
+}
+
+bool WindowPipeline::push(double ax, double ay, double az, double gx, double gy, double gz, WindowFeatures& row,
+                          ActivityLabel& label, bool sample_vibrating, bool& window_vibrating) {
   const double acc_mag = std::sqrt(ax * ax + ay * ay + az * az);
   const double gyro_mag = std::sqrt(gx * gx + gy * gy + gz * gz);
   const double acc_filtered = state_->acc_lp.process(state_->acc_hp.process(acc_mag));
@@ -502,9 +522,11 @@ bool WindowPipeline::push(double ax, double ay, double az, double gx, double gy,
   if (static_cast<int>(state_->acc.size()) == TB_WINDOW_N) {
     state_->acc.erase(state_->acc.begin());
     state_->gyro.erase(state_->gyro.begin());
+    state_->vibrating.erase(state_->vibrating.begin());
   }
   state_->acc.push_back(acc_filtered);
   state_->gyro.push_back(gyro_filtered);
+  state_->vibrating.push_back(sample_vibrating ? 1 : 0);
   state_->count += 1;
   if (state_->count < TB_WINDOW_N || ((state_->count - TB_WINDOW_N) % TB_HOP) != 0) {
     return false;
@@ -513,24 +535,37 @@ bool WindowPipeline::push(double ax, double ay, double az, double gx, double gy,
   row.acc = features_for_window(state_->acc, fs);
   row.gyro = features_for_window(state_->gyro, fs);
   fill_amplitudes(row);
-  label = state_->smoother.update(row);
+  window_vibrating = false;
+  for (char flag : state_->vibrating) {
+    if (flag != 0) {
+      window_vibrating = true;
+      break;
+    }
+  }
+  // A vibrating window is stored with the flag and left out of the label vote.
+  label = window_vibrating ? state_->smoother.hold() : state_->smoother.update(row);
   return true;
 }
 
 int format_window_json(char* dest, int capacity, const char* device_id, long long ts_us, const WindowFeatures& row,
-                       const ActivityLabel& label) {
+                       const ActivityLabel& label, bool vibrating, const char* test_type) {
   if (dest == nullptr || capacity < 2 || !device_id_ok(device_id) || label.label == nullptr) {
     return -1;
+  }
+  char extra[80] = "";
+  if (test_type != nullptr && device_id_ok(test_type)) {
+    std::snprintf(extra, sizeof(extra), ",\"test_type\":\"%s\"", test_type);
   }
   const StreamFeatures& shown = display_stream(row, label.label);
   const int wrote = std::snprintf(
       dest, static_cast<size_t>(capacity),
       "{\"type\":\"window\",\"device_id\":\"%s\",\"ts_us\":%lld,\"peak_hz\":%.6f,\"band_power\":%.6f,"
       "\"rms\":%.6f,\"sharpness\":%.6f,\"amp_deg\":%.6f,\"disp_mm\":%.6f,\"log_amp\":%.6f,"
-      "\"label\":\"%s\",\"p_tremor\":%.6f,\"vibrating\":false,"
+      "\"label\":\"%s\",\"p_tremor\":%.6f,\"vibrating\":%s%s,"
       "\"peak_hz_acc\":%.6f,\"peak_hz_gyro\":%.6f}",
       device_id, ts_us, shown.peak_hz, shown.band_power, shown.rms, shown.sharpness, row.amp_deg, row.disp_mm,
-      row.log_amp, label.label, label.p_tremor, row.acc.peak_hz, row.gyro.peak_hz);
+      row.log_amp, label.label, label.p_tremor, vibrating ? "true" : "false", extra, row.acc.peak_hz,
+      row.gyro.peak_hz);
   if (wrote < 0 || wrote >= capacity) {
     return -1;
   }

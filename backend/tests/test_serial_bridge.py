@@ -50,6 +50,19 @@ class SerialBridgeTest(unittest.TestCase):
             self.assertEqual(device["mode"], "serial")
             self.assertEqual(device["fw_version"], "0.3.0")
             self.assertNotIn("sim", device["fw_version"])
+            with Session(engine) as session:
+                self.assertEqual(
+                    consume_line(
+                        session,
+                        '{"type":"session","device_id":"band-01","test_type":"rest",'
+                        '"ts_start":"2026-11-14T02:40:00Z","ts_end":"2026-11-14T02:40:20Z",'
+                        '"quality":0.75,"summary":{"tremor_pct":100}}\n',
+                        now=NOW,
+                    ),
+                    "session",
+                )
+            listed = client.get("/api/windows", params={"device_id": "band-01"}).json()
+            self.assertEqual(len(listed), 1)
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from sqlmodel import Session
 
 from app.routes.devices import heartbeat
 from app.routes.ingest import ingest
-from app.schemas import HeartbeatIn, IngestBody, WindowIn, utcnow
+from app.schemas import HeartbeatIn, IngestBody, SessionIn, WindowIn, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +60,33 @@ def parse_serial_line(line: str, *, now: datetime | None = None) -> IngestBody |
             uptime_s=_optional_float(payload.get("uptime_s")),
         )
         return device_id, body
+    if kind == "session":
+        summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+        started = _timestamp(payload.get("ts_start"), now or utcnow())
+        ended = _timestamp(payload.get("ts_end"), started)
+        quality = _optional_float(payload.get("quality"))
+        test_type = payload.get("test_type") if isinstance(payload.get("test_type"), str) else "rest"
+        return IngestBody(
+            device_id=device_id,
+            device_name=device_id,
+            sessions=[
+                SessionIn(
+                    ts_start=started,
+                    ts_end=ended,
+                    test_type=test_type,
+                    summary=summary,
+                    quality=quality,
+                    is_synthetic=bool(payload.get("is_synthetic", False)),
+                )
+            ],
+        )
     if kind != "window":
         return None
     stamp = _timestamp(payload.get("ts"), now or utcnow())
+    test_type = payload.get("test_type") if isinstance(payload.get("test_type"), str) else None
     window = WindowIn(
         ts=stamp,
+        test_type=test_type,
         peak_hz=float(payload["peak_hz"]),
         band_power=float(payload["band_power"]),
         rms=float(payload["rms"]),
@@ -94,6 +116,8 @@ def apply_serial_line(session: Session, line: str, *, now: datetime | None = Non
         heartbeat(device_id, body, session)
         return "heartbeat"
     ingest(parsed, session)
+    if parsed.sessions and not parsed.windows:
+        return "session"
     return "window"
 
 
@@ -119,6 +143,8 @@ def post_line(base_url: str, line: str, client: httpx.Client) -> str:
         return "heartbeat"
     response = client.post(f"{root}/api/ingest", json=parsed.model_dump(mode="json"))
     response.raise_for_status()
+    if parsed.sessions and not parsed.windows:
+        return "session"
     return "window"
 
 
