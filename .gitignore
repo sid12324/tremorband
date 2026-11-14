@@ -19,6 +19,7 @@ dist/
 firmware/band/include/secrets.h
 firmware/band/.pio/
 firmware/band/build-host/
+firmware/rig/build-host/
 
 ml/data/*
 !ml/data/.gitkeep

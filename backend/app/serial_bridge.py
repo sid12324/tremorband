@@ -20,7 +20,8 @@ from sqlmodel import Session
 
 from app.routes.devices import heartbeat
 from app.routes.ingest import ingest
-from app.schemas import HeartbeatIn, IngestBody, SessionIn, WindowIn, utcnow
+from app.routes.rig import record_run
+from app.schemas import HeartbeatIn, IngestBody, RigRunIn, SessionIn, WindowIn, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,9 @@ class SerialParseError(ValueError):
     """A JSON line was readable but not a window or heartbeat this bridge stores."""
 
 
-def parse_serial_line(line: str, *, now: datetime | None = None) -> IngestBody | tuple[str, HeartbeatIn] | None:
+def parse_serial_line(
+    line: str, *, now: datetime | None = None
+) -> IngestBody | tuple[str, HeartbeatIn] | RigRunIn | None:
     """Turn one serial line into an ingest body or a heartbeat.
 
     Blank lines, logs, and raw sample lines are ignored. A window without an
@@ -80,6 +83,18 @@ def parse_serial_line(line: str, *, now: datetime | None = None) -> IngestBody |
                 )
             ],
         )
+    if kind == "rig":
+        if "set_hz" not in payload:
+            raise SerialParseError("rig line has no set_hz")
+        stamp = _timestamp(payload.get("ts"), now or utcnow())
+        return RigRunIn(
+            ts=stamp,
+            set_hz=float(payload["set_hz"]),
+            measured_hz=_optional_float(payload.get("measured_hz")),
+            band_hz=_optional_float(payload.get("band_hz")),
+            amp_set=_optional_float(payload.get("amp_deg", payload.get("amp_set"))),
+            amp_band=_optional_float(payload.get("amp_band")),
+        )
     if kind != "window":
         return None
     stamp = _timestamp(payload.get("ts"), now or utcnow())
@@ -115,6 +130,9 @@ def apply_serial_line(session: Session, line: str, *, now: datetime | None = Non
         device_id, body = parsed
         heartbeat(device_id, body, session)
         return "heartbeat"
+    if isinstance(parsed, RigRunIn):
+        record_run(parsed, session)
+        return "rig"
     ingest(parsed, session)
     if parsed.sessions and not parsed.windows:
         return "session"
@@ -141,6 +159,10 @@ def post_line(base_url: str, line: str, client: httpx.Client) -> str:
         response = client.post(f"{root}/api/device/{device_id}/heartbeat", json=body.model_dump(mode="json"))
         response.raise_for_status()
         return "heartbeat"
+    if isinstance(parsed, RigRunIn):
+        response = client.post(f"{root}/api/rig/run", json=parsed.model_dump(mode="json"))
+        response.raise_for_status()
+        return "rig"
     response = client.post(f"{root}/api/ingest", json=parsed.model_dump(mode="json"))
     response.raise_for_status()
     if parsed.sessions and not parsed.windows:

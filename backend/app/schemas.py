@@ -162,6 +162,64 @@ class WindowRead(BaseModel):
     waveform: list[float] | None = None
 
 
+class RigRunIn(BaseModel):
+    """One calibration setpoint, from the rig serial line or the Calibration page."""
+
+    ts: datetime = Field(default_factory=utcnow)
+    set_hz: float = Field(gt=0, le=30)
+    measured_hz: float | None = Field(default=None, ge=0, le=30)
+    band_hz: float | None = Field(default=None, ge=0, le=30)
+    amp_set: float | None = Field(default=None, ge=0, le=180)
+    amp_band: float | None = Field(default=None, ge=0)
+
+
+class RigRunRead(BaseModel):
+    """Stored calibration run."""
+
+    id: int
+    ts: datetime
+    set_hz: float
+    measured_hz: float | None
+    band_hz: float | None
+    amp_set: float | None
+    amp_band: float | None
+
+
+class RigPoint(BaseModel):
+    """One scatter point. compared_hz is the band peak when present, otherwise the rig measurement."""
+
+    id: int
+    ts: datetime
+    set_hz: float
+    measured_hz: float | None
+    band_hz: float | None
+    compared_hz: float
+    error_hz: float
+    error_pct: float
+    amp_set: float | None
+    amp_band: float | None
+
+
+class RigFrequencyRow(BaseModel):
+    """Accuracy for one setpoint, grouped to the nearest 0.01 Hz."""
+
+    set_hz: float
+    n: int
+    mean_band_hz: float | None
+    mean_measured_hz: float | None
+    mae_hz: float
+    mean_pct_error: float
+
+
+class RigAccuracy(BaseModel):
+    """MAE and per-frequency error for the newest stored runs."""
+
+    mae_hz: float | None
+    n: int
+    rows: list[RigFrequencyRow]
+    points: list[RigPoint]
+
+
 def device_connected(last_seen: datetime | None, now: datetime | None = None) -> bool:
     """True when the band has checked in within the last 20 seconds."""
     seen = as_utc(last_seen)

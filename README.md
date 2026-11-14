@@ -2,7 +2,7 @@
 
 TremorBand is a monitoring aid, not a diagnostic device.
 
-Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. `backend/agent/` and `firmware/rig/` are still empty. There is no model or agent command. Labels are measurement classes, not a diagnosis.
+Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. Milestone 5 adds the SG90 calibration sketch and the Calibration page. `backend/agent/` is still empty. There is no model or agent command. Labels are measurement classes, not a diagnosis.
 
 The simulator posts window features about every 1.2 seconds (104 Hz sampling, 256-sample windows, hop 128). It cycles through still, voluntary movement, and tremor, with a little noise and a slow amplitude envelope.
 
@@ -86,10 +86,31 @@ From `backend/`, with the virtualenv activated and the API already running:
 python -m app.serial_bridge --port - < windows.jsonl
 ```
 
-`--port -` reads JSON lines from stdin. Pass a serial device path, such as `--port /dev/ttyACM0`, when a band is plugged in. Each `type: window` line is posted to `/api/ingest`. The Live page lists bands; choose `band-01` to see those windows.
+`--port -` reads JSON lines from stdin. Pass a serial device path, such as `--port /dev/ttyACM0`, when a band is plugged in. Each `type: window` line is posted to `/api/ingest`. A `type: rig` line is posted to `/api/rig/run`. The Live page lists bands; choose `band-01` to see those windows.
 
 From `backend/`:
 
 ```bash
 python -m unittest tests.test_serial_bridge
 ```
+
+## Calibration rig
+
+From the repo root:
+
+```bash
+g++ -std=c++17 -O2 -Wall -Wextra -Werror -I firmware/rig \
+  firmware/rig/rig_control.cpp firmware/rig/native/rig_main.cpp \
+  -o firmware/rig/build-host/rig_test -lm
+./firmware/rig/build-host/rig_test
+```
+
+`rig_test` checks the sine step, the 600 deg/s amplitude cut, a late loop's measured frequency, and the 3 to 8 Hz sweep. On the servo board, `firmware/rig/rig.ino` uses the same controller. Servo signal is pin 9, with a separate 5 V supply and a common ground. Serial commands at 115200 are `f <hz>`, `a <deg>`, `stop`, and `sweep`.
+
+From `backend/`, with the virtualenv activated:
+
+```bash
+python -m unittest tests.test_rig
+```
+
+That run compiles the controller test and checks `POST /api/rig/run` plus `GET /api/rig/accuracy`. Open http://127.0.0.1:5173/#/calibration for the setpoint form, live error, per-frequency table, scatter plot, and MAE.
