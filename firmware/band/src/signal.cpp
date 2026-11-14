@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <stdexcept>
 
 namespace {
@@ -241,6 +243,33 @@ StreamFeatures features_for_window(const std::vector<double>& filtered, double f
   return features;
 }
 
+void fill_amplitudes(WindowFeatures& row) {
+  const double gyro_peak = std::sqrt(2.0) * row.gyro.rms;
+  const double acc_peak = std::sqrt(2.0) * row.acc.rms;
+  if (row.gyro.peak_hz > 1e-6) {
+    row.amp_deg = gyro_peak / (2.0 * kPi * row.gyro.peak_hz);
+  } else {
+    row.amp_deg = 0.0;
+  }
+  if (row.acc.peak_hz > 1e-6) {
+    const double omega = 2.0 * kPi * row.acc.peak_hz;
+    row.disp_mm = (acc_peak / (omega * omega)) * 1000.0;
+  } else {
+    row.disp_mm = 0.0;
+  }
+  row.log_amp = std::log10(std::max(row.amp_deg, 1e-12));
+}
+
+bool in_tremor_band(double peak_hz) {
+  const double low = static_cast<double>(TB_TREMOR_HZ_MIN) - static_cast<double>(TB_PEAK_TOL_HZ);
+  const double high = static_cast<double>(TB_TREMOR_HZ_MAX) + static_cast<double>(TB_PEAK_TOL_HZ);
+  return peak_hz >= low && peak_hz <= high;
+}
+
+bool stream_is_tremor(const StreamFeatures& stream) {
+  return stream.sharpness >= static_cast<double>(TB_TREMOR_SHARPNESS) && in_tremor_band(stream.peak_hz);
+}
+
 void require_same_length(const std::vector<double>& ax, const std::vector<double>& ay,
                          const std::vector<double>& az, const std::vector<double>& gx,
                          const std::vector<double>& gy, const std::vector<double>& gz) {
@@ -272,20 +301,7 @@ std::vector<WindowFeatures> compute_windows(const std::vector<double>& ax, const
     WindowFeatures row;
     row.acc = features_for_window(acc_window, fs);
     row.gyro = features_for_window(gyro_window, fs);
-    const double gyro_peak = std::sqrt(2.0) * row.gyro.rms;
-    const double acc_peak = std::sqrt(2.0) * row.acc.rms;
-    if (row.gyro.peak_hz > 1e-6) {
-      row.amp_deg = gyro_peak / (2.0 * kPi * row.gyro.peak_hz);
-    } else {
-      row.amp_deg = 0.0;
-    }
-    if (row.acc.peak_hz > 1e-6) {
-      const double omega = 2.0 * kPi * row.acc.peak_hz;
-      row.disp_mm = (acc_peak / (omega * omega)) * 1000.0;
-    } else {
-      row.disp_mm = 0.0;
-    }
-    row.log_amp = std::log10(std::max(row.amp_deg, 1e-12));
+    fill_amplitudes(row);
     rows.push_back(row);
   }
   return rows;
@@ -312,4 +328,211 @@ WindowFeatures run_selftest() {
     throw std::runtime_error("selftest produced no windows");
   }
   return rows.back();
+}
+
+namespace {
+
+const char* label_name(int code) {
+  if (code == 2) {
+    return "tremor";
+  }
+  if (code == 1) {
+    return "voluntary";
+  }
+  return "still";
+}
+
+int label_code(const char* label) {
+  if (std::strcmp(label, "tremor") == 0) {
+    return 2;
+  }
+  if (std::strcmp(label, "voluntary") == 0) {
+    return 1;
+  }
+  return 0;
+}
+
+double clamp01(double value) {
+  if (value < 0.0) {
+    return 0.0;
+  }
+  if (value > 1.0) {
+    return 1.0;
+  }
+  return value;
+}
+
+const StreamFeatures& display_stream(const WindowFeatures& row, const char* label) {
+  if (std::strcmp(label, "tremor") == 0) {
+    const bool acc = stream_is_tremor(row.acc);
+    const bool gyro = stream_is_tremor(row.gyro);
+    if (acc && !gyro) {
+      return row.acc;
+    }
+    if (gyro && !acc) {
+      return row.gyro;
+    }
+    if (acc && gyro) {
+      return row.acc.sharpness > row.gyro.sharpness ? row.acc : row.gyro;
+    }
+  }
+  if (std::strcmp(label, "voluntary") == 0 && row.acc.sharpness > row.gyro.sharpness) {
+    return row.acc;
+  }
+  return row.gyro;
+}
+
+bool device_id_ok(const char* device_id) {
+  if (device_id == nullptr || device_id[0] == '\0') {
+    return false;
+  }
+  for (const char* cursor = device_id; *cursor != '\0'; ++cursor) {
+    const unsigned char c = static_cast<unsigned char>(*cursor);
+    const bool ok = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '.' ||
+                    c == '_' || c == ':' || c == '-';
+    if (!ok) {
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
+ActivityLabel rule_label(const WindowFeatures& row) {
+  ActivityLabel out{"still", 0.0};
+  if (row.acc.rms < static_cast<double>(TB_STILL_ACC_RMS) &&
+      row.gyro.rms < static_cast<double>(TB_STILL_GYRO_RMS)) {
+    return out;
+  }
+  const bool acc = stream_is_tremor(row.acc);
+  const bool gyro = stream_is_tremor(row.gyro);
+  if (acc || gyro) {
+    double score = 0.0;
+    if (acc) {
+      score = row.acc.sharpness;
+    }
+    if (gyro && row.gyro.sharpness > score) {
+      score = row.gyro.sharpness;
+    }
+    out.label = "tremor";
+    out.p_tremor = clamp01(score);
+    return out;
+  }
+  out.label = "voluntary";
+  return out;
+}
+
+LabelSmoother::LabelSmoother() : raw_{0, 0, 0}, count_(0), current_(-1), last_score_(0.0) {}
+
+ActivityLabel LabelSmoother::push_raw(const char* label, double tremor_score) {
+  const int code = label_code(label);
+  if (count_ < 3) {
+    raw_[count_++] = code;
+  } else {
+    raw_[0] = raw_[1];
+    raw_[1] = raw_[2];
+    raw_[2] = code;
+  }
+  int votes[3] = {0, 0, 0};
+  for (int i = 0; i < count_; ++i) {
+    votes[raw_[i]] += 1;
+  }
+  int best = 0;
+  for (int i = 1; i < 3; ++i) {
+    if (votes[i] > votes[best]) {
+      best = i;
+    }
+  }
+  bool unique = true;
+  for (int i = 0; i < 3; ++i) {
+    if (i != best && votes[i] == votes[best]) {
+      unique = false;
+    }
+  }
+  if (current_ < 0) {
+    current_ = code;
+  } else if (unique && votes[best] >= 2 && best != current_) {
+    current_ = best;
+  }
+  if (code == 2) {
+    last_score_ = clamp01(tremor_score);
+  }
+  ActivityLabel out;
+  out.label = label_name(current_);
+  out.p_tremor = current_ == 2 ? last_score_ : 0.0;
+  return out;
+}
+
+ActivityLabel LabelSmoother::update(const WindowFeatures& row) {
+  const ActivityLabel raw = rule_label(row);
+  return push_raw(raw.label, raw.p_tremor);
+}
+
+struct WindowPipeline::State {
+  Biquad acc_hp;
+  Biquad acc_lp;
+  Biquad gyro_hp;
+  Biquad gyro_lp;
+  std::vector<double> acc;
+  std::vector<double> gyro;
+  int count;
+  LabelSmoother smoother;
+};
+
+WindowPipeline::WindowPipeline()
+    : state_(new State{make_biquad(make_hpf(TB_HPF_HZ, TB_FS_HZ)), make_biquad(make_lpf(TB_LPF_HZ, TB_FS_HZ)),
+                       make_biquad(make_hpf(TB_HPF_HZ, TB_FS_HZ)), make_biquad(make_lpf(TB_LPF_HZ, TB_FS_HZ)),
+                       {},
+                       {},
+                       0,
+                       LabelSmoother()}) {
+  state_->acc.reserve(static_cast<size_t>(TB_WINDOW_N));
+  state_->gyro.reserve(static_cast<size_t>(TB_WINDOW_N));
+}
+
+WindowPipeline::~WindowPipeline() { delete state_; }
+
+bool WindowPipeline::push(double ax, double ay, double az, double gx, double gy, double gz, WindowFeatures& row,
+                          ActivityLabel& label) {
+  const double acc_mag = std::sqrt(ax * ax + ay * ay + az * az);
+  const double gyro_mag = std::sqrt(gx * gx + gy * gy + gz * gz);
+  const double acc_filtered = state_->acc_lp.process(state_->acc_hp.process(acc_mag));
+  const double gyro_filtered = state_->gyro_lp.process(state_->gyro_hp.process(gyro_mag));
+  if (static_cast<int>(state_->acc.size()) == TB_WINDOW_N) {
+    state_->acc.erase(state_->acc.begin());
+    state_->gyro.erase(state_->gyro.begin());
+  }
+  state_->acc.push_back(acc_filtered);
+  state_->gyro.push_back(gyro_filtered);
+  state_->count += 1;
+  if (state_->count < TB_WINDOW_N || ((state_->count - TB_WINDOW_N) % TB_HOP) != 0) {
+    return false;
+  }
+  const double fs = static_cast<double>(TB_FS_HZ);
+  row.acc = features_for_window(state_->acc, fs);
+  row.gyro = features_for_window(state_->gyro, fs);
+  fill_amplitudes(row);
+  label = state_->smoother.update(row);
+  return true;
+}
+
+int format_window_json(char* dest, int capacity, const char* device_id, long long ts_us, const WindowFeatures& row,
+                       const ActivityLabel& label) {
+  if (dest == nullptr || capacity < 2 || !device_id_ok(device_id) || label.label == nullptr) {
+    return -1;
+  }
+  const StreamFeatures& shown = display_stream(row, label.label);
+  const int wrote = std::snprintf(
+      dest, static_cast<size_t>(capacity),
+      "{\"type\":\"window\",\"device_id\":\"%s\",\"ts_us\":%lld,\"peak_hz\":%.6f,\"band_power\":%.6f,"
+      "\"rms\":%.6f,\"sharpness\":%.6f,\"amp_deg\":%.6f,\"disp_mm\":%.6f,\"log_amp\":%.6f,"
+      "\"label\":\"%s\",\"p_tremor\":%.6f,\"vibrating\":false,"
+      "\"peak_hz_acc\":%.6f,\"peak_hz_gyro\":%.6f}",
+      device_id, ts_us, shown.peak_hz, shown.band_power, shown.rms, shown.sharpness, row.amp_deg, row.disp_mm,
+      row.log_amp, label.label, label.p_tremor, row.acc.peak_hz, row.gyro.peak_hz);
+  if (wrote < 0 || wrote >= capacity) {
+    return -1;
+  }
+  return wrote;
 }

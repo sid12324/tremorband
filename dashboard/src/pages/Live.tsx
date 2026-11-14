@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import HistoryChart from "../components/HistoryChart";
 import SpectrumChart from "../components/SpectrumChart";
 import { bandConnected, formatNumber, formatOptional, isSimulated, labelText, secondsAgo } from "../format";
@@ -17,7 +17,21 @@ function mergeWindow(previous: LiveWindow[], next: LiveWindow): LiveWindow[] {
   return [...previous, next].slice(-40);
 }
 
+function upsertDevice(list: DeviceStatus[], next: DeviceStatus): DeviceStatus[] {
+  const index = list.findIndex((item) => item.id === next.id);
+  if (index < 0) {
+    return [next, ...list];
+  }
+  const copy = list.slice();
+  copy[index] = { ...copy[index], ...next };
+  return copy;
+}
+
 export default function Live() {
+  const [devices, setDevices] = useState<DeviceStatus[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  const requestRef = useRef(0);
   const [device, setDevice] = useState<DeviceStatus | null>(null);
   const [windows, setWindows] = useState<LiveWindow[]>([]);
   const [latest, setLatest] = useState<LiveWindow | null>(null);
@@ -33,29 +47,55 @@ export default function Live() {
     return () => window.clearInterval(timer);
   }, []);
 
+  async function loadHistory(deviceId: string) {
+    const token = ++requestRef.current;
+    const response = await fetch(`/api/windows?device_id=${encodeURIComponent(deviceId)}&limit=40`);
+    if (!response.ok) {
+      throw new Error(`Window list failed (${response.status})`);
+    }
+    const history = (await response.json()) as LiveWindow[];
+    if (token !== requestRef.current) {
+      return;
+    }
+    setWindows(history);
+    setLatest(history.length > 0 ? history[history.length - 1] : null);
+    const latestResponse = await fetch(`/api/device/${encodeURIComponent(deviceId)}/latest`);
+    if (latestResponse.ok) {
+      const cached = (await latestResponse.json()) as LiveWindow | null;
+      if (token === requestRef.current && cached && cached.device_id === deviceId) {
+        setLatest(cached);
+        setWindows((current) => mergeWindow(current, cached));
+      }
+    }
+  }
+
+  function chooseDevice(next: DeviceStatus) {
+    selectedRef.current = next.id;
+    setSelectedId(next.id);
+    setDevice(next);
+    setCommand(null);
+    setWindows([]);
+    setLatest(null);
+    void loadHistory(next.id).catch((err: unknown) => {
+      setError(err instanceof Error ? err.message : "Cannot reach the backend");
+    });
+  }
+
   useEffect(() => {
     let cancelled = false;
     let source: EventSource | null = null;
 
-    async function loadHistory(deviceId: string) {
-      const response = await fetch(`/api/windows?device_id=${encodeURIComponent(deviceId)}&limit=40`);
-      if (!response.ok) {
-        throw new Error(`Window list failed (${response.status})`);
-      }
-      const history = (await response.json()) as LiveWindow[];
-      if (cancelled) {
-        return;
-      }
-      setWindows(history);
-      setLatest(history.length > 0 ? history[history.length - 1] : null);
-      const latestResponse = await fetch(`/api/device/${encodeURIComponent(deviceId)}/latest`);
-      if (latestResponse.ok) {
-        const cached = (await latestResponse.json()) as LiveWindow | null;
-        if (!cancelled && cached) {
-          setLatest(cached);
-          setWindows((current) => mergeWindow(current, cached));
-        }
-      }
+    function deviceFromWindow(next: LiveWindow, current: DeviceStatus | null): DeviceStatus {
+      return {
+        id: next.device_id,
+        name: current && current.id === next.device_id ? current.name : next.device_id,
+        last_seen: next.ts,
+        battery: current && current.id === next.device_id ? current.battery : null,
+        rssi: current && current.id === next.device_id ? current.rssi : null,
+        fw_version: current && current.id === next.device_id ? current.fw_version : null,
+        mode: current && current.id === next.device_id ? current.mode : null,
+        connected: true,
+      };
     }
 
     async function start() {
@@ -64,11 +104,14 @@ export default function Live() {
         if (!response.ok) {
           throw new Error(`Device list failed (${response.status})`);
         }
-        const devices = (await response.json()) as DeviceStatus[];
+        const found = (await response.json()) as DeviceStatus[];
         if (cancelled) {
           return;
         }
-        const current = devices[0] ?? null;
+        setDevices(found);
+        const current = found[0] ?? null;
+        selectedRef.current = current?.id ?? null;
+        setSelectedId(current?.id ?? null);
         setDevice(current);
         if (current) {
           await loadHistory(current.id);
@@ -100,46 +143,41 @@ export default function Live() {
         if (cancelled) {
           return;
         }
-        setDevice((current) => {
-          if (current && current.id !== next.id) {
-            return current;
+        setDevices((current) => upsertDevice(current, next));
+        if (selectedRef.current === null || selectedRef.current === next.id) {
+          if (selectedRef.current === null) {
+            selectedRef.current = next.id;
+            setSelectedId(next.id);
           }
-          return next;
-        });
+          setDevice(next);
+        }
       });
       source.addEventListener("window", (event) => {
         const next = JSON.parse((event as MessageEvent<string>).data) as LiveWindow;
         if (cancelled) {
           return;
         }
+        setDevices((current) => {
+          const existing = current.find((item) => item.id === next.device_id) ?? null;
+          return upsertDevice(current, deviceFromWindow(next, existing));
+        });
+        if (selectedRef.current && next.device_id !== selectedRef.current) {
+          return;
+        }
+        if (!selectedRef.current) {
+          selectedRef.current = next.device_id;
+          setSelectedId(next.device_id);
+        }
         setLatest(next);
         setWindows((current) => mergeWindow(current, next));
-        setDevice((current) => {
-          if (!current || current.id !== next.device_id) {
-            return {
-              id: next.device_id,
-              name: next.device_id,
-              last_seen: next.ts,
-              battery: current?.battery ?? null,
-              rssi: current?.rssi ?? null,
-              fw_version: current?.fw_version ?? null,
-              mode: current?.mode ?? null,
-              connected: true,
-            };
-          }
-          return { ...current, last_seen: next.ts, connected: true };
-        });
+        setDevice((current) => deviceFromWindow(next, current));
       });
       source.addEventListener("command", (event) => {
         const next = JSON.parse((event as MessageEvent<string>).data) as CommandEvent;
-        if (!cancelled) {
-          setCommand((current) => {
-            if (current && current.device_id !== next.device_id && current.id !== next.id) {
-              return current;
-            }
-            return next;
-          });
+        if (cancelled || (selectedRef.current && next.device_id !== selectedRef.current)) {
+          return;
         }
+        setCommand(next);
       });
     }
 
@@ -217,11 +255,28 @@ export default function Live() {
             </div>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatusCell label="Connection" value={connectionText} detail={device ? secondsAgo(device.last_seen, now) : "Start the simulator"} />
+            <StatusCell label="Connection" value={connectionText} detail={device ? secondsAgo(device.last_seen, now) : "Waiting for a band"} />
             <StatusCell label="Battery" value={formatOptional(device?.battery ?? null, 0, "%")} detail={device?.name ?? "—"} />
             <StatusCell label="RSSI" value={formatOptional(device?.rssi ?? null, 0, " dBm")} detail={device?.fw_version ?? "—"} />
             <StatusCell label="Mode" value={device?.mode ?? "—"} detail={device?.id ?? "No device id"} />
           </div>
+          {devices.length > 0 ? (
+            <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Bands">
+              {devices.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={item.id === selectedId}
+                  className={`min-h-12 rounded-lg border-2 border-[#121212] px-4 text-lg font-semibold ${
+                    item.id === selectedId ? "bg-[#121212] text-white" : "bg-white"
+                  }`}
+                  onClick={() => chooseDevice(item)}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </section>
 
         <section className="grid grid-cols-1 gap-3 lg:grid-cols-4" aria-label="Latest window">
@@ -268,7 +323,7 @@ export default function Live() {
           {latest?.spectrum && latest.spectrum.length > 0 ? (
             <SpectrumChart spectrum={latest.spectrum} peakHz={latest.peak_hz} />
           ) : (
-            <p className="py-16 text-center text-xl">Waiting for simulated windows.</p>
+            <p className="py-16 text-center text-xl">This window has no spectrum.</p>
           )}
         </section>
 
@@ -278,7 +333,7 @@ export default function Live() {
           {windows.length > 0 ? (
             <HistoryChart windows={windows} />
           ) : (
-            <p className="py-16 text-center text-xl">Waiting for simulated windows.</p>
+            <p className="py-16 text-center text-xl">Waiting for windows.</p>
           )}
         </section>
 
@@ -332,7 +387,7 @@ export default function Live() {
             Latest windows
           </h2>
           {windows.length === 0 ? (
-            <p className="mt-3 text-lg">Waiting for simulated windows.</p>
+            <p className="mt-3 text-lg">Waiting for windows.</p>
           ) : (
             <ol className="mt-3 flex flex-col gap-2">
               {windows.slice(-5).reverse().map((window) => (

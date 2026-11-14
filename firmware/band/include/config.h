@@ -24,7 +24,17 @@ constexpr float TB_HPF_HZ = 2.0f;
 constexpr float TB_HPF_HZ_MS = 1.5f;
 constexpr float TB_LPF_HZ = 15.0f;
 
+// Rule gate. Still is low motion. A tremor candidate also needs a sharp peak
+// in 3–12 Hz. TB_PEAK_TOL_HZ covers the parabolic peak estimate.
+constexpr float TB_STILL_ACC_RMS = 0.08f;
+constexpr float TB_STILL_GYRO_RMS = 1.0f;
+constexpr float TB_TREMOR_SHARPNESS = 0.55f;
+constexpr float TB_TREMOR_HZ_MIN = 3.0f;
+constexpr float TB_TREMOR_HZ_MAX = 12.0f;
+constexpr float TB_PEAK_TOL_HZ = 0.15f;
+
 constexpr int TB_SERIAL_BAUD = 115200;
+constexpr const char* TB_FW_VERSION = "0.3.0";
 
 #define TB_IMU_LSM6DSOX 1
 #define TB_IMU_MPU6050 2

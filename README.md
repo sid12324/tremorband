@@ -2,7 +2,7 @@
 
 TremorBand is a monitoring aid, not a diagnostic device.
 
-Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline: the firmware sketch samples an IMU over serial, `selftest` runs a 5 Hz sine through that pipeline, and `ml/features.py` matches the firmware math. `backend/agent/` and `firmware/rig/` are still empty. There is no model or agent command.
+Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. `backend/agent/` and `firmware/rig/` are still empty. There is no model or agent command. Labels are measurement classes, not a diagnosis.
 
 The simulator posts window features about every 1.2 seconds (104 Hz sampling, 256-sample windows, hop 128). It cycles through still, voluntary movement, and tremor, with a little noise and a slow amplitude envelope.
 
@@ -56,7 +56,7 @@ g++ -std=c++17 -O2 -Wall -Wextra -Werror -I firmware/band/include \
 ./firmware/band/build-host/selftest
 ```
 
-The line reports `acc_peak_hz` and `gyro_peak_hz` for a synthetic 5 Hz sine. On a flashed band, the same command is the serial line `selftest` at 115200 baud. The sketch also prints `ts_us,ax,ay,az,gx,gy,gz` at 104 Hz.
+The line reports `acc_peak_hz` and `gyro_peak_hz` for a synthetic 5 Hz sine. On a flashed band, the same command is the serial line `selftest` at 115200 baud. The sketch then prints one JSON window per hop of 128 samples.
 
 ## Feature parity
 
@@ -66,4 +66,20 @@ From the repo root:
 python3 -m unittest ml.tests.test_feature_parity
 ```
 
-The test compiles the firmware pipeline and checks it against `ml/features.py` on 3, 5, and 8 Hz sinusoids plus noise.
+The test compiles the firmware pipeline and checks it against `ml/features.py` on 3, 5, and 8 Hz sinusoids plus noise. It also checks the still, voluntary, and tremor rule.
+
+## Serial bridge
+
+From `backend/`, with the virtualenv activated and the API already running:
+
+```bash
+python -m app.serial_bridge --port - < windows.jsonl
+```
+
+`--port -` reads JSON lines from stdin. Pass a serial device path, such as `--port /dev/ttyACM0`, when a band is plugged in. Each `type: window` line is posted to `/api/ingest`. The Live page lists bands; choose `band-01` to see those windows.
+
+From `backend/`:
+
+```bash
+python -m unittest tests.test_serial_bridge
+```

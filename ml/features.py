@@ -17,6 +17,12 @@ WINDOW_N = 256
 HOP = 128
 HPF_HZ = 2.0
 LPF_HZ = 15.0
+STILL_ACC_RMS = 0.08
+STILL_GYRO_RMS = 1.0
+TREMOR_SHARPNESS = 0.55
+TREMOR_HZ_MIN = 3.0
+TREMOR_HZ_MAX = 12.0
+PEAK_TOL_HZ = 0.15
 PI = 3.141592653589793
 SELFTEST_SAMPLES = 1024
 
@@ -40,8 +46,8 @@ class WindowFeatures:
     disp_mm: float
     log_amp: float
 
-    def as_dict(self) -> dict[str, float]:
-        values: dict[str, float] = {}
+    def as_dict(self) -> dict[str, float | str]:
+        values: dict[str, float | str] = {}
         for suffix, stream in (("acc", self.acc), ("gyro", self.gyro)):
             values[f"peak_hz_{suffix}"] = stream.peak_hz
             values[f"band_power_{suffix}"] = stream.band_power
@@ -53,6 +59,7 @@ class WindowFeatures:
         values["amp_deg"] = self.amp_deg
         values["disp_mm"] = self.disp_mm
         values["log_amp"] = self.log_amp
+        values["label"] = rule_label(self)
         return values
 
 
@@ -270,6 +277,21 @@ def compute_windows(
             )
         )
     return rows
+
+
+def rule_label(row: WindowFeatures) -> str:
+    """Still, voluntary, or tremor for one window. This is not a diagnosis."""
+    if row.acc.rms < STILL_ACC_RMS and row.gyro.rms < STILL_GYRO_RMS:
+        return "still"
+    low = TREMOR_HZ_MIN - PEAK_TOL_HZ
+    high = TREMOR_HZ_MAX + PEAK_TOL_HZ
+
+    def is_tremor(stream: StreamFeatures) -> bool:
+        return stream.sharpness >= TREMOR_SHARPNESS and low <= stream.peak_hz <= high
+
+    if is_tremor(row.acc) or is_tremor(row.gyro):
+        return "tremor"
+    return "voluntary"
 
 
 def selftest_samples() -> tuple[list[float], list[float], list[float], list[float], list[float], list[float]]:

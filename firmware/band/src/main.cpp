@@ -27,13 +27,26 @@ static bool command_is_selftest(const char* text) {
   return true;
 }
 
+static void print_window(long long ts_us, const WindowFeatures& row, const ActivityLabel& label) {
+  char line[640];
+  const int wrote = format_window_json(line, sizeof(line), TB_DEVICE_ID, ts_us, row, label);
+  if (wrote > 0) {
+    Serial.println(line);
+    return;
+  }
+  Serial.printf("{\"type\":\"log\",\"device_id\":\"%s\",\"message\":\"window format failed\"}\n", TB_DEVICE_ID);
+}
+
 static void handle_command(const char* text) {
   if (command_is_selftest(text)) {
     const WindowFeatures row = run_selftest();
-    Serial.printf("selftest acc_peak_hz=%.6f gyro_peak_hz=%.6f\n", row.acc.peak_hz, row.gyro.peak_hz);
+    const ActivityLabel label = rule_label(row);
+    Serial.printf("selftest acc_peak_hz=%.6f gyro_peak_hz=%.6f label=%s\n", row.acc.peak_hz, row.gyro.peak_hz,
+                  label.label);
+    print_window(0, row, label);
     return;
   }
-  Serial.printf("unknown command\n");
+  Serial.printf("{\"type\":\"log\",\"device_id\":\"%s\",\"message\":\"unknown command\"}\n", TB_DEVICE_ID);
 }
 
 static void poll_serial() {
@@ -54,6 +67,8 @@ static void poll_serial() {
 }
 
 static void sample_task(void* /*arg*/) {
+  WindowPipeline pipeline;
+  uint32_t windows = 0;
   while (true) {
     poll_serial();
     if (!g_sample_due) {
@@ -65,13 +80,24 @@ static void sample_task(void* /*arg*/) {
     if (g_imu == nullptr || !g_imu->read(sample)) {
       ++g_read_failures;
       if (g_read_failures == 1 || (g_read_failures % 104) == 0) {
-        Serial.printf("imu read failed count=%lu\n", static_cast<unsigned long>(g_read_failures));
+        Serial.printf("{\"type\":\"log\",\"device_id\":\"%s\",\"message\":\"imu read failed\",\"count\":%lu}\n",
+                      TB_DEVICE_ID, static_cast<unsigned long>(g_read_failures));
       }
       continue;
     }
     sample.t_us = esp_timer_get_time();
-    Serial.printf("%lld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", static_cast<long long>(sample.t_us), sample.ax,
-                  sample.ay, sample.az, sample.gx, sample.gy, sample.gz);
+    WindowFeatures row;
+    ActivityLabel label{"still", 0.0};
+    if (!pipeline.push(sample.ax, sample.ay, sample.az, sample.gx, sample.gy, sample.gz, row, label)) {
+      continue;
+    }
+    print_window(sample.t_us, row, label);
+    ++windows;
+    if (windows % 4 == 0) {
+      Serial.printf(
+          "{\"type\":\"heartbeat\",\"device_id\":\"%s\",\"fw_version\":\"%s\",\"mode\":\"serial\"}\n",
+          TB_DEVICE_ID, TB_FW_VERSION);
+    }
   }
 }
 
@@ -92,8 +118,10 @@ void setup() {
     delay(800);
   }
   set_led(true);
-  Serial.printf("imu %s fs=%.1f\n", g_imu->name(), static_cast<double>(TB_FS_HZ));
-  Serial.printf("ts_us,ax,ay,az,gx,gy,gz\n");
+  Serial.printf("{\"type\":\"log\",\"device_id\":\"%s\",\"message\":\"imu %s fs=%.1f\"}\n", TB_DEVICE_ID, g_imu->name(),
+                static_cast<double>(TB_FS_HZ));
+  Serial.printf("{\"type\":\"heartbeat\",\"device_id\":\"%s\",\"fw_version\":\"%s\",\"mode\":\"serial\"}\n",
+                TB_DEVICE_ID, TB_FW_VERSION);
 
   const uint64_t period_us = static_cast<uint64_t>(1000000.0f / TB_FS_HZ + 0.5f);
   esp_timer_handle_t timer = nullptr;

@@ -50,8 +50,9 @@ int main() {
     print_stream("acc", row.acc);
     std::cout << ",";
     print_stream("gyro", row.gyro);
+    const ActivityLabel activity = rule_label(row);
     std::cout << ",\"amp_deg\":" << row.amp_deg << ",\"disp_mm\":" << row.disp_mm << ",\"log_amp\":" << row.log_amp
-              << "}\n";
+              << ",\"label\":\"" << activity.label << "\"}\n";
   }
   return 0;
 }
