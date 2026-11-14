@@ -279,6 +279,44 @@ def compute_windows(
     return rows
 
 
+FEATURE_NAMES = (
+    "peak_hz_acc",
+    "band_power_acc",
+    "rms_acc",
+    "sharpness_acc",
+    "entropy_acc",
+    "zcr_acc",
+    "ratio_acc",
+    "peak_hz_gyro",
+    "band_power_gyro",
+    "rms_gyro",
+    "sharpness_gyro",
+    "entropy_gyro",
+    "zcr_gyro",
+    "ratio_gyro",
+    "amp_deg",
+    "disp_mm",
+    "log_amp",
+)
+
+
+def feature_vector(row: WindowFeatures) -> list[float]:
+    """One model row. The order is FEATURE_NAMES, shared with the C header."""
+    flat: dict[str, float] = {}
+    for suffix, stream in (("acc", row.acc), ("gyro", row.gyro)):
+        flat[f"peak_hz_{suffix}"] = stream.peak_hz
+        flat[f"band_power_{suffix}"] = stream.band_power
+        flat[f"rms_{suffix}"] = stream.rms
+        flat[f"sharpness_{suffix}"] = stream.sharpness
+        flat[f"entropy_{suffix}"] = stream.spectral_entropy
+        flat[f"zcr_{suffix}"] = stream.zero_crossing_rate
+        flat[f"ratio_{suffix}"] = stream.band_ratio
+    flat["amp_deg"] = row.amp_deg
+    flat["disp_mm"] = row.disp_mm
+    flat["log_amp"] = row.log_amp
+    return [float(flat[name]) for name in FEATURE_NAMES]
+
+
 def rule_label(row: WindowFeatures) -> str:
     """Still, voluntary, or tremor for one window. This is not a diagnosis."""
     if row.acc.rms < STILL_ACC_RMS and row.gyro.rms < STILL_GYRO_RMS:

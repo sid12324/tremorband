@@ -2,7 +2,7 @@
 
 TremorBand is a monitoring aid, not a diagnostic device.
 
-Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. Milestone 5 adds the SG90 calibration sketch and the Calibration page. `backend/agent/` is still empty. There is no model or agent command. Labels are measurement classes, not a diagnosis.
+Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. Milestone 5 adds the SG90 calibration sketch and the Calibration page. Milestone 6 trains a small window model on synthetic sessions and exports it to the band. `backend/agent/` is still empty. There is no agent command. Labels are measurement classes, not a diagnosis.
 
 The simulator posts window features about every 1.2 seconds (104 Hz sampling, 256-sample windows, hop 128). It cycles through still, voluntary movement, and tremor, with a little noise and a slow amplitude envelope.
 
@@ -114,3 +114,24 @@ python -m unittest tests.test_rig
 ```
 
 That run compiles the controller test and checks `POST /api/rig/run` plus `GET /api/rig/accuracy`. Open http://127.0.0.1:5173/#/calibration for the setpoint form, live error, per-frequency table, scatter plot, and MAE.
+
+## Window model
+
+From the repo root, with the packages in `ml/requirements.txt` installed:
+
+```bash
+python3 -m ml.collect --synthetic --out-dir ml/data
+python3 -m ml.train --data-dir ml/data --model-dir ml/model --plot-dir ml/plots
+python3 -m ml.export_model
+python3 -m unittest ml.tests.test_milestone6
+```
+
+`ml/collect.py --synthetic` writes labeled CSVs with `synthetic=yes`. A rig session is one of the three tremor sessions for each person, so rig windows stay under half of the tremor class. `ml/train.py` reports leave-one-person-out precision, recall, and a confusion plot for a depth-limited random forest and a decision tree. The forest is the exported model. `ml/export_model.py` writes `firmware/band/src/model_params.h` and the pickle at `ml/model/tremor_model.pkl` is what `ml.inference.p_tremor_server` scores. On the band, the rule gate still decides still and voluntary; the model only rescores a tremor candidate.
+
+A live capture, when a band is connected, is:
+
+```bash
+python3 -m ml.collect --port /dev/ttyACM0 --out ml/data/session.csv --person-id p01 --label tremor --wrist left --pose rest --source human --hz 5 --seconds 20
+```
+
+That command was not run here. It sends `set_mode:forward`, counts down, and ticks a 5 Hz metronome while it records.

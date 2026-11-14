@@ -66,6 +66,8 @@ int main() {
         compute_windows(ax, ay, az, gx, gy, gz, TB_HPF_HZ, TB_LPF_HZ);
     ok &= expect(!rows.empty(), "still signal produced no windows");
     ok &= expect(std::string(rule_label(rows.back()).label) == "still", "rest was not still");
+    ok &= expect(std::string(classify_window(rows.back()).label) == "still", "gate did not keep still");
+    ok &= expect(classify_window(rows.back()).p_tremor == 0.0, "still score was not zero");
   }
 
   {
@@ -89,6 +91,7 @@ int main() {
         compute_windows(ax, ay, az, gx, gy, gz, TB_HPF_HZ, TB_LPF_HZ);
     ok &= expect(!rows.empty(), "voluntary signal produced no windows");
     ok &= expect(std::string(rule_label(rows.back()).label) == "voluntary", "mixed motion was not voluntary");
+    ok &= expect(std::string(classify_window(rows.back()).label) == "voluntary", "gate did not keep voluntary");
   }
 
   {

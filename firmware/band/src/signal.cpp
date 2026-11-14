@@ -1,5 +1,11 @@
 #include "signal.h"
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#include "model_params.h"
+#pragma GCC diagnostic pop
+
 #include "config.h"
 
 ThresholdOverrides& threshold_overrides() {
@@ -405,6 +411,49 @@ bool device_id_ok(const char* device_id) {
 
 }  // namespace
 
+void fill_model_features(const WindowFeatures& row, float* out) {
+  const StreamFeatures* streams[2] = {&row.acc, &row.gyro};
+  int index = 0;
+  for (const StreamFeatures* stream : streams) {
+    out[index++] = static_cast<float>(stream->peak_hz);
+    out[index++] = static_cast<float>(stream->band_power);
+    out[index++] = static_cast<float>(stream->rms);
+    out[index++] = static_cast<float>(stream->sharpness);
+    out[index++] = static_cast<float>(stream->spectral_entropy);
+    out[index++] = static_cast<float>(stream->zero_crossing_rate);
+    out[index++] = static_cast<float>(stream->band_ratio);
+  }
+  out[index++] = static_cast<float>(row.amp_deg);
+  out[index++] = static_cast<float>(row.disp_mm);
+  out[index++] = static_cast<float>(row.log_amp);
+}
+
+ActivityLabel classify_window(const WindowFeatures& row) {
+  const ActivityLabel gate = rule_label(row);
+  // The rule gate stays in front. The model only scores a tremor candidate.
+  if (std::strcmp(gate.label, "tremor") != 0) {
+    return gate;
+  }
+  float features[TB_MODEL_N_FEATURES];
+  fill_model_features(row, features);
+  float scores[TB_MODEL_N_CLASSES];
+  if (tb_model_predict_proba(features, TB_MODEL_N_FEATURES, scores, TB_MODEL_N_CLASSES) != 0) {
+    return gate;
+  }
+  int best = 0;
+  for (int i = 1; i < TB_MODEL_N_CLASSES; ++i) {
+    if (scores[i] > scores[best]) {
+      best = i;
+    }
+  }
+  const char* name = TB_MODEL_CLASSES[best];
+  if (std::strcmp(name, "tremor") != 0) {
+    name = "voluntary";
+  }
+  ActivityLabel out{name, clamp01(scores[TB_MODEL_TREMOR_INDEX])};
+  return out;
+}
+
 ActivityLabel rule_label(const WindowFeatures& row) {
   ActivityLabel out{"still", 0.0};
   if (row.acc.rms < threshold_overrides().still_acc_rms && row.gyro.rms < threshold_overrides().still_gyro_rms) {
@@ -470,7 +519,7 @@ ActivityLabel LabelSmoother::push_raw(const char* label, double tremor_score) {
 }
 
 ActivityLabel LabelSmoother::update(const WindowFeatures& row) {
-  const ActivityLabel raw = rule_label(row);
+  const ActivityLabel raw = classify_window(row);
   return push_raw(raw.label, raw.p_tremor);
 }
 

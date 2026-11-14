@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cmath>
+#include <cstring>
 
 static volatile bool g_sample_due = false;
 static ImuDriver* g_imu = nullptr;
@@ -50,7 +51,7 @@ static void dispatch(const char* text, uint32_t now_ms) {
   const ParsedCommand command = parse_command(text);
   if (command.kind == CommandKind::SelfTest) {
     const WindowFeatures row = run_selftest();
-    const ActivityLabel label = rule_label(row);
+    const ActivityLabel label = classify_window(row);
     Serial.printf("selftest acc_peak_hz=%.6f gyro_peak_hz=%.6f label=%s\n", row.acc.peak_hz, row.gyro.peak_hz,
                   label.label);
     print_window(0, row, label, false, nullptr);
@@ -125,6 +126,12 @@ static void sample_task(void* /*arg*/) {
       continue;
     }
     sample.t_us = esp_timer_get_time();
+    if (std::strcmp(g_band.mode, "forward") == 0) {
+      Serial.printf("%lld,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f\n", static_cast<long long>(sample.t_us),
+                    static_cast<double>(sample.ax), static_cast<double>(sample.ay), static_cast<double>(sample.az),
+                    static_cast<double>(sample.gx), static_cast<double>(sample.gy), static_cast<double>(sample.gz));
+      continue;
+    }
     const double gyro_mag =
         sqrt(static_cast<double>(sample.gx) * sample.gx + static_cast<double>(sample.gy) * sample.gy +
              static_cast<double>(sample.gz) * sample.gz);

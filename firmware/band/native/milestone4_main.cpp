@@ -181,6 +181,7 @@ int main() {
     expect(parse_command("vibrate:ALERT").pattern == HapticPattern::Alert, "vibrate alert");
     expect(parse_command("SELFTEST").kind == CommandKind::SelfTest, "selftest");
     expect(parse_command("set_mode:ms_mode").kind == CommandKind::SetMode, "ms mode");
+    expect(parse_command("set_mode:forward").kind == CommandKind::SetMode, "forward mode");
     GuidedTest test;
     Haptics haptics;
     StillCalibrator calibrator;

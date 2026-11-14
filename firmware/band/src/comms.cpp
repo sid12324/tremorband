@@ -95,7 +95,7 @@ HapticPattern pattern_from_name(const char* name) {
 
 bool mode_ok(const char* mode) {
   return std::strcmp(mode, "passive") == 0 || std::strcmp(mode, "test") == 0 || std::strcmp(mode, "raw") == 0 ||
-         std::strcmp(mode, "ms_mode") == 0;
+         std::strcmp(mode, "ms_mode") == 0 || std::strcmp(mode, "forward") == 0;
 }
 
 }  // namespace

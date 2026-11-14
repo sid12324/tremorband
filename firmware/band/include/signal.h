@@ -45,6 +45,10 @@ struct ActivityLabel {
 
 ActivityLabel rule_label(const WindowFeatures& row);
 
+// Still and voluntary stay as the rule called them. A tremor candidate is
+// rescored by the exported model, which can reject it.
+ActivityLabel classify_window(const WindowFeatures& row);
+
 // Runtime copies of the rule thresholds. set_threshold updates these.
 struct ThresholdOverrides {
   double still_acc_rms;

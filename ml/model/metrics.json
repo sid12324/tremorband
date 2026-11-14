@@ -1,0 +1,102 @@
+{
+  "synthetic_rows": 19968,
+  "real_rows": 0,
+  "windows": 120,
+  "people": [
+    "p01",
+    "p02",
+    "p03",
+    "p04"
+  ],
+  "rig_tremor_window_fraction": 0.3333333333333333,
+  "random_forest": {
+    "precision": {
+      "still": 1.0,
+      "voluntary": 0.8888888888888888,
+      "tremor": 1.0
+    },
+    "recall": {
+      "still": 1.0,
+      "voluntary": 1.0,
+      "tremor": 0.9166666666666666
+    },
+    "support": {
+      "still": 20,
+      "voluntary": 40,
+      "tremor": 60
+    },
+    "confusion": [
+      [
+        20,
+        0,
+        0
+      ],
+      [
+        0,
+        40,
+        0
+      ],
+      [
+        0,
+        5,
+        55
+      ]
+    ],
+    "macro_f1": 0.9658994032395567,
+    "n": 120
+  },
+  "decision_tree": {
+    "precision": {
+      "still": 0.6666666666666666,
+      "voluntary": 1.0,
+      "tremor": 1.0
+    },
+    "recall": {
+      "still": 1.0,
+      "voluntary": 1.0,
+      "tremor": 0.8333333333333334
+    },
+    "support": {
+      "still": 20,
+      "voluntary": 40,
+      "tremor": 60
+    },
+    "confusion": [
+      [
+        20,
+        0,
+        0
+      ],
+      [
+        0,
+        40,
+        0
+      ],
+      [
+        10,
+        0,
+        50
+      ]
+    ],
+    "macro_f1": 0.903030303030303,
+    "n": 120
+  },
+  "labels": [
+    "still",
+    "voluntary",
+    "tremor"
+  ],
+  "chosen": "random_forest",
+  "exported_fit": "all_people_after_leave_one_person_out",
+  "forest_params": {
+    "n_estimators": 8,
+    "max_depth": 6,
+    "min_samples_leaf": 2,
+    "random_state": 7
+  },
+  "tree_params": {
+    "max_depth": 5,
+    "min_samples_leaf": 2,
+    "random_state": 7
+  }
+}
