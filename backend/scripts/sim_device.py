@@ -17,9 +17,14 @@ import statistics
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
+
+_BACKEND = Path(__file__).resolve().parents[1]
+if str(_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_BACKEND))
 
 FS_HZ = 104.0
 WINDOW_SAMPLES = 256
@@ -36,6 +41,28 @@ TEST_WINDOWS = {
     "tapping": 8,
     "gait": 24,
 }
+def _guided_metrics(test_type: str | None) -> dict[str, float]:
+    """Synthetic gyro peaks so a simulated test still has tapping or gait numbers."""
+    from app.movement import gait_summary, intention_ratio, tapping_summary
+
+    if test_type == "tapping":
+        samples = []
+        for index in range(10):
+            at = index * 400
+            samples.extend([(at, 1.0), (at + 40, 12.0 - index * 0.4), (at + 80, 1.0)])
+        return tapping_summary(samples, 10.0)
+    if test_type == "gait":
+        samples = []
+        for index in range(20):
+            gap = 520 if index % 2 == 0 else 560
+            at = index * gap
+            samples.extend([(at, 1.0), (at + 40, 8.0), (at + 80, 1.0)])
+        return gait_summary(samples, 30.0)
+    if test_type == "finger_nose":
+        return {"intention_ratio": intention_ratio([1.0] * 7 + [1.4] * 3)}
+    return {}
+
+
 CYCLE = (
     ("tremor", 6),
     ("still", 4),
@@ -183,6 +210,7 @@ class Simulator:
             "n_windows": len(rows),
             "cancelled": cancelled,
             "is_synthetic": True,
+            **_guided_metrics(self.test_type),
         }
         quality = (len(valid) / len(rows)) if rows else 0.0
         response = client.post(

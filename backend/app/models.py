@@ -199,6 +199,19 @@ class RigRun(SQLModel, table=True):
     amp_band: float | None = None
 
 
+class CareSettings(SQLModel, table=True):
+    """Local preferences for sleep hours, mode, and the recorded transport."""
+
+    __tablename__ = "care_settings"
+
+    id: int = Field(default=1, primary_key=True)
+    transport: str = "simulator"
+    ms_mode: bool = False
+    sleep_start_hour: int = 22
+    sleep_end_hour: int = 7
+    haptic_intensity: int = 70
+
+
 class AgentEvent(SQLModel, table=True):
     """Timeline event for a later agent run."""
 

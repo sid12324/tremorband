@@ -17,7 +17,17 @@ from agent.report_text import DISCLAIMER, compose_report
 from app.analytics import THRESHOLD_MAX, THRESHOLD_MIN, tremor_hours_by_day
 from app.db import engine
 from app.live import live_hub
-from app.models import AgentEvent, Baseline, CaptureSession, Command, Device, Medication, Report, SymptomLog
+from app.models import (
+    AgentEvent,
+    Baseline,
+    CaptureSession,
+    CareSettings,
+    Command,
+    Device,
+    Medication,
+    Report,
+    SymptomLog,
+)
 from app.routes.analytics import _session_points, _symptom_points, persist_baselines
 from app.schemas import as_utc, utcnow
 
@@ -72,13 +82,16 @@ def extra_tests_today(session: Session) -> int:
 def plan_extra_tests(session: Session) -> dict:
     """Say whether another guided test would fill a gap. It does not enqueue one."""
     now = utcnow()
+    settings = session.get(CareSettings, 1)
+    start_hour = settings.sleep_start_hour if settings is not None else SLEEP_START_HOUR
+    end_hour = settings.sleep_end_hour if settings is not None else SLEEP_END_HOUR
     recent = [
         row.test_type
         for row in session.exec(select(CaptureSession))
         if as_utc(row.ts_start) is not None and as_utc(row.ts_start) >= now - timedelta(hours=6)
     ]
     missing = [name for name in TEST_TYPES if name not in recent]
-    asleep = _in_sleep(now.hour)
+    asleep = _in_sleep(now.hour, start_hour, end_hour)
     used = extra_tests_today(session)
     if asleep:
         decision = "inside the configured sleep hours, so no extra test is requested"
