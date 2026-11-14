@@ -1,13 +1,21 @@
 import { useEffect, useState } from "react";
 import Calibration from "./pages/Calibration";
 import Live from "./pages/Live";
+import Log from "./pages/Log";
+import Trends from "./pages/Trends";
 
-type PageName = "live" | "calibration";
+type PageName = "live" | "calibration" | "trends" | "log";
 
 function pageFromHash(): PageName {
   const hash = window.location.hash.replace(/^#/, "");
   if (hash === "/calibration" || hash === "calibration") {
     return "calibration";
+  }
+  if (hash === "/trends" || hash === "trends") {
+    return "trends";
+  }
+  if (hash === "/log" || hash === "log") {
+    return "log";
   }
   return "live";
 }
@@ -28,7 +36,7 @@ export default function App() {
 
   return (
     <>
-      <nav className="mx-auto flex max-w-6xl gap-2 px-4 pt-6 sm:px-6" aria-label="Pages">
+      <nav className="mx-auto flex max-w-6xl flex-wrap gap-2 px-4 pt-6 sm:px-6" aria-label="Pages">
         <a href="#/" className={linkClass("live")} aria-current={page === "live" ? "page" : undefined}>
           Live
         </a>
@@ -39,8 +47,17 @@ export default function App() {
         >
           Calibration
         </a>
+        <a href="#/trends" className={linkClass("trends")} aria-current={page === "trends" ? "page" : undefined}>
+          Trends
+        </a>
+        <a href="#/log" className={linkClass("log")} aria-current={page === "log" ? "page" : undefined}>
+          Log
+        </a>
       </nav>
-      {page === "calibration" ? <Calibration /> : <Live />}
+      {page === "live" ? <Live /> : null}
+      {page === "calibration" ? <Calibration /> : null}
+      {page === "trends" ? <Trends /> : null}
+      {page === "log" ? <Log /> : null}
     </>
   );
 }

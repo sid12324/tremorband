@@ -2,7 +2,7 @@
 
 TremorBand is a monitoring aid, not a diagnostic device.
 
-Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. Milestone 5 adds the SG90 calibration sketch and the Calibration page. Milestone 6 trains a small window model on synthetic sessions and exports it to the band. `backend/agent/` is still empty. There is no agent command. Labels are measurement classes, not a diagnosis.
+Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. Milestone 5 adds the SG90 calibration sketch and the Calibration page. Milestone 6 trains a small window model on synthetic sessions and exports it to the band. Milestone 7 adds personal baselines, a synthetic seven-day log, and the Trends and Log pages. `backend/agent/` is still empty. There is no agent command. Labels are measurement classes, not a diagnosis. The pages do not suggest a dose.
 
 The simulator posts window features about every 1.2 seconds (104 Hz sampling, 256-sample windows, hop 128). It cycles through still, voluntary movement, and tremor, with a little noise and a slow amplitude envelope.
 
@@ -135,3 +135,16 @@ python3 -m ml.collect --port /dev/ttyACM0 --out ml/data/session.csv --person-id 
 ```
 
 That command was not run here. It sends `set_mode:forward`, counts down, and ticks a 5 Hz metronome while it records.
+
+## Trends and the symptom log
+
+From `backend/`, with the virtualenv activated:
+
+```bash
+python -m unittest tests.test_analytics
+python scripts/seed_demo.py
+```
+
+The unit test checks the personal baseline, z-scores, the comparison-line steps, wearing-off bins, symptom-tag association, and window exclusions. `scripts/seed_demo.py` writes seven days for the band `demo-band`. Every session has `is_synthetic` set. Running it again replaces that band, doses marked `synthetic demo`, and notes marked `Synthetic demo`. Other bands stay.
+
+Open http://127.0.0.1:5173/#/trends for log amplitude, the baseline band, logged-dose markers, hours after a logged dose, tremor hours, and the comparison-line buttons. Open http://127.0.0.1:5173/#/log to save a dose or a symptom rating. Both pages show the monitoring-aid line.

@@ -220,6 +220,175 @@ class RigAccuracy(BaseModel):
     points: list[RigPoint]
 
 
+class MedicationIn(BaseModel):
+    """A dose the person already logged. The API does not suggest one."""
+
+    ts: datetime = Field(default_factory=utcnow)
+    name: str = Field(min_length=1, max_length=80)
+    dose: str = Field(min_length=1, max_length=80)
+
+
+class MedicationRead(BaseModel):
+    """Stored dose marker."""
+
+    id: int
+    ts: datetime
+    name: str
+    dose: str
+
+
+class SymptomIn(BaseModel):
+    """A self-reported rating and tags. Not a diagnosis."""
+
+    ts: datetime = Field(default_factory=utcnow)
+    rating: int = Field(ge=0, le=4)
+    note: str | None = Field(default=None, max_length=280)
+    tags: list[str] = Field(default_factory=list, max_length=8)
+
+
+class SymptomRead(BaseModel):
+    """Stored symptom-log entry."""
+
+    id: int
+    ts: datetime
+    rating: int
+    note: str | None
+    tags: list[str]
+
+
+class FeedbackIn(BaseModel):
+    """Moves the comparison line. It does not interpret a session."""
+
+    kind: Literal["not_a_bad_day", "missed_symptoms"]
+    session_id: int | None = None
+    ts: datetime = Field(default_factory=utcnow)
+
+
+class ThresholdChange(BaseModel):
+    """One recorded movement of threshold_z."""
+
+    test_type: str
+    old_threshold_z: float
+    new_threshold_z: float
+    reason: str
+
+
+class FeedbackRead(BaseModel):
+    """Stored feedback and the threshold changes it caused."""
+
+    id: int
+    ts: datetime
+    session_id: int | None
+    kind: Literal["not_a_bad_day", "missed_symptoms"]
+    changes: list[ThresholdChange]
+
+
+class BaselineRead(BaseModel):
+    """Personal baseline for one test type."""
+
+    test_type: str
+    mean_log_amp: float
+    sd_log_amp: float
+    mean_hz: float
+    threshold_z: float
+    n_sessions: int
+    updated_at: datetime
+
+
+class SessionMetric(BaseModel):
+    """One session compared with the personal baseline and the last logged dose."""
+
+    id: int
+    device_id: str
+    test_type: str
+    ts_start: datetime
+    ts_end: datetime | None
+    log_amp: float | None
+    peak_hz: float | None
+    z: float | None
+    above_threshold: bool
+    hours_since_dose: float | None
+    is_synthetic: bool
+    quality: float | None
+
+
+class WearingOffBin(BaseModel):
+    """Sessions grouped by hours since the last logged dose."""
+
+    label: str
+    n: int
+    median_log_amp: float | None
+
+
+class WearingOffReport(BaseModel):
+    """Timing comparison. A description of recorded sessions, not a diagnosis."""
+
+    bins: list[WearingOffBin]
+    n_early: int
+    n_late: int
+    median_early: float | None
+    median_late: float | None
+    median_difference: float | None
+    effect_size: float | None
+    confidence: Literal["insufficient", "low", "moderate"]
+    finding: str
+
+
+class TagCorrelation(BaseModel):
+    """Association between a symptom tag and recorded log amplitude."""
+
+    tag: str
+    n_tagged: int
+    n_untagged: int
+    median_tagged: float | None
+    median_untagged: float | None
+    median_difference: float | None
+    correlation: float | None
+    finding: str
+
+
+class QualityReport(BaseModel):
+    """How many windows were left out of a summary."""
+
+    n_windows: int
+    excluded_vibration: int
+    excluded_missing: int
+    excluded_low_quality: int
+    n_used: int
+    quality: float | None
+
+
+class TremorHours(BaseModel):
+    """Passive tremor time rolled up to one day."""
+
+    day: str
+    tremor_hours: float
+    n: int
+
+
+class SessionRead(BaseModel):
+    """A stored capture session."""
+
+    id: int
+    device_id: str
+    ts_start: datetime
+    ts_end: datetime | None
+    test_type: str
+    summary: dict[str, Any] | None
+    quality: float | None
+    is_synthetic: bool
+
+
+class DemoSeedRead(BaseModel):
+    """What the synthetic demo load wrote. Every session is marked synthetic."""
+
+    device_id: str
+    sessions: int
+    medications: int
+    symptoms: int
+    is_synthetic: bool
+
+
 def device_connected(last_seen: datetime | None, now: datetime | None = None) -> bool:
     """True when the band has checked in within the last 20 seconds."""
     seen = as_utc(last_seen)
