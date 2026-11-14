@@ -1,8 +1,9 @@
 #pragma once
 
-// Pins checked against the Seeed XIAO ESP32-S3 pin map:
-// D0 GPIO1, D1 GPIO2, D2 GPIO3, D3 GPIO4, D4 GPIO5 (SDA), D5 GPIO6 (SCL),
-// user LED GPIO21 active low. GPIO3 is a strapping pin; leave it as an input.
+// ESP32-S3-DevKitC-1 (USB-C, WROOM-1).
+// LSM6DS3 I2C is SDA GPIO5 and SCL GPIO6. INT1 is GPIO4.
+// Button GPIO2, battery sense GPIO3, firmware LED GPIO21 active low.
+// GPIO3 is a strapping pin; leave it as an input.
 
 // One sample-rate constant for the firmware. ml/features.py uses the same 104.0.
 constexpr float TB_FS_HZ = 104.0f;
