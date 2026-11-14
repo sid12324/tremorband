@@ -36,10 +36,13 @@ constexpr float TB_PEAK_TOL_HZ = 0.15f;
 constexpr int TB_SERIAL_BAUD = 115200;
 constexpr const char* TB_FW_VERSION = "0.3.0";
 
-#define TB_IMU_LSM6DSOX 1
+// Default IMU is an LSM6DS3 on I2C, using the Adafruit LSM6DS library's
+// LSM6DS3 class. 104 Hz, accel ±4 g, gyro ±500 dps. TB_IMU_MPU6050 builds
+// the MPU6050 fallback. This band has no vibration motor.
+#define TB_IMU_LSM6DS3 1
 #define TB_IMU_MPU6050 2
 #ifndef TB_IMU_DRIVER
-#define TB_IMU_DRIVER TB_IMU_LSM6DSOX
+#define TB_IMU_DRIVER TB_IMU_LSM6DS3
 #endif
 
 #define TB_SERVER_URL "http://127.0.0.1:8000"

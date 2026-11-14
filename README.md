@@ -179,16 +179,15 @@ python -m unittest tests.test_movement
 
 | Function | Seeed pin | GPIO | Notes |
 | --- | --- | --- | --- |
-| I2C SDA | D4 | GPIO5 | 400 kHz, with SCL |
-| I2C SCL | D5 | GPIO6 | 400 kHz, with SDA |
-| IMU INT1 | D3 | GPIO4 | Optional data-ready interrupt |
-| Vibration motor | D0 | GPIO1 | 1 kOhm to a 2N2222 base. Motor between 3V3 and the collector. 1N4148 flyback diode. LEDC PWM |
+| LSM6DS3 SDA | D4 | GPIO5 | 400 kHz I2C. Adafruit LSM6DS `LSM6DS3`, 104 Hz, accel ±4 g, gyro ±500 dps |
+| LSM6DS3 SCL | D5 | GPIO6 | 400 kHz I2C, with SDA |
+| LSM6DS3 INT1 | D3 | GPIO4 | Optional data-ready interrupt |
 | Button | D1 | GPIO2 | INPUT_PULLUP. Long press is longer than 1.5 s |
 | Battery sense | D2 | GPIO3 | Two 220 kOhm resistors. GPIO3 is a strapping pin, so the divider is configurable in `config.h` |
 | Onboard LED |  | GPIO21 | Active low |
 | Rig servo |  | Pin 9 on the servo board | Separate 5 V supply and a common ground |
 
-The same names live in `firmware/band/include/config.h`.
+The wrist IMU is an LSM6DS3. `TB_IMU_DRIVER=TB_IMU_MPU6050` selects the MPU6050 fallback. This band has no vibration motor. The same names live in `firmware/band/include/config.h`.
 
 ## Setup
 

@@ -2,14 +2,14 @@
 
 #include "config.h"
 
-#include <Adafruit_LSM6DSOX.h>
+#include <Adafruit_LSM6DS3.h>
 #include <Wire.h>
 
 namespace {
 
 constexpr float kRadToDeg = 57.2957795f;
 
-class Lsm6dsoxDriver : public ImuDriver {
+class Lsm6ds3Driver : public ImuDriver {
  public:
   bool begin() override {
     Wire.begin(TB_I2C_SDA_PIN, TB_I2C_SCL_PIN, TB_I2C_HZ);
@@ -39,12 +39,12 @@ class Lsm6dsoxDriver : public ImuDriver {
     return true;
   }
 
-  const char* name() const override { return "lsm6dsox"; }
+  const char* name() const override { return "lsm6ds3"; }
 
  private:
-  Adafruit_LSM6DSOX device_;
+  Adafruit_LSM6DS3 device_;
 };
 
 }  // namespace
 
-ImuDriver* make_lsm6dsox() { return new Lsm6dsoxDriver(); }
+ImuDriver* make_lsm6ds3() { return new Lsm6ds3Driver(); }
