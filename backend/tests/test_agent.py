@@ -14,6 +14,7 @@ os.environ["TREMORBAND_MODEL"] = "mock"
 
 from sqlmodel import Session  # noqa: E402
 
+from agent.analysis_text import compose_analysis, review_from_facts  # noqa: E402
 from agent.mock_model import ScriptedChatModel  # noqa: E402
 from agent.planner import _build_model, model_name, redact, run_thread  # noqa: E402
 from agent.tools import _in_sleep, plan_extra_tests, trigger_test  # noqa: E402
@@ -63,6 +64,83 @@ class ModelSelectionTest(unittest.TestCase):
         self.assertEqual(redact("prefix unit-test-key suffix"), "prefix [redacted] suffix")
 
 
+def _session(session_id: int, log_amp: float, hour: int) -> dict:
+    return {
+        "id": session_id,
+        "test_type": "rest",
+        "is_synthetic": False,
+        "data_label": "recorded",
+        "ts_start": f"2026-01-01T{hour:02d}:00:00+00:00",
+        "median_log_amp": log_amp,
+        "median_amp_deg": 1.0,
+        "median_peak_hz": 4.0,
+        "n_windows": 4,
+        "n_tremor": 1,
+        "tremor_pct": 25.0,
+    }
+
+
+class ReviewShapeTest(unittest.TestCase):
+    def test_three_sections_and_no_care_plan_inside_the_line(self) -> None:
+        facts = {"n_sessions": 2, "sessions": [_session(1, 0.0, 8), _session(2, 0.1, 9)]}
+        review = review_from_facts(facts)
+        self.assertEqual(
+            [section["id"] for section in review["sections"]],
+            ["average", "highest", "recent"],
+        )
+        self.assertEqual(review["sections"][1]["lines"][0], "Chosen by the highest median log amplitude.")
+        self.assertIn("Session 2", review["sections"][1]["lines"][1])
+        self.assertIn("Session 2", review["sections"][2]["lines"][0])
+        self.assertFalse(review["concerning"])
+        self.assertIsNone(review["care_plan"])
+        text = compose_analysis(facts)
+        self.assertLess(text.index("Average across stored sessions"), text.index("Highest session by median log amplitude"))
+        self.assertLess(text.index("Highest session by median log amplitude"), text.index("Most recent session"))
+        self.assertLess(text.index("Most recent session"), text.index("Summary"))
+        self.assertNotIn("Care plan", text)
+        self.assertNotIn("you should", text.lower())
+
+    def test_care_plan_only_when_highest_passes_the_comparison_line(self) -> None:
+        sessions = [_session(index, 0.0, index) for index in range(1, 6)]
+        sessions.append(_session(6, 0.0, 9))
+        sessions[2]["median_log_amp"] = 3.0
+        sessions[2]["ts_start"] = "2026-01-01T03:00:00+00:00"
+        facts = {"n_sessions": len(sessions), "sessions": sessions}
+        review = review_from_facts(facts)
+        self.assertTrue(review["concerning"])
+        self.assertGreater(review["highest_z"], 2.0)
+        self.assertIn("Session 3", review["sections"][1]["lines"][1])
+        self.assertIn("Session 6", review["sections"][2]["lines"][0])
+        self.assertIsNotNone(review["care_plan"])
+        text = compose_analysis(facts)
+        self.assertLess(text.index("Summary"), text.index("Care plan"))
+        lowered = text.lower()
+        self.assertNotIn("you should", lowered)
+        for banned in ("prescribe", "milligram", "levodopa", "increase the dose", "parkinson"):
+            self.assertNotIn(banned, lowered)
+
+    def test_tied_highest_keeps_the_later_session(self) -> None:
+        facts = {"n_sessions": 2, "sessions": [_session(1, 1.5, 8), _session(2, 1.5, 11)]}
+        review = review_from_facts(facts)
+        self.assertIn("Session 2", review["sections"][1]["lines"][1])
+
+    def test_missing_measure_omits_the_unit(self) -> None:
+        row = _session(1, 0.2, 8)
+        row["median_amp_deg"] = None
+        review = review_from_facts({"n_sessions": 1, "sessions": [row]})
+        lines = review["sections"][1]["lines"]
+        self.assertIn("Median amplitude: not stored.", lines)
+        self.assertNotIn("not stored deg", "\n".join(lines))
+        self.assertIn("Windows: 4.", lines)
+
+    def test_empty_store_has_three_sections_and_no_care_plan(self) -> None:
+        review = review_from_facts({"n_sessions": 0, "sessions": []})
+        self.assertEqual(len(review["sections"]), 3)
+        self.assertFalse(review["concerning"])
+        self.assertIsNone(review["care_plan"])
+        self.assertIn("No sessions are stored yet.", review["summary"])
+
+
 class PlannerRunTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -82,6 +160,22 @@ class PlannerRunTest(unittest.TestCase):
         self.assertNotIn("you should", lowered)
         for banned in ("prescribe", "milligram", "levodopa", "increase the dose"):
             self.assertNotIn(banned, lowered)
+        review = result["review"]
+        titles = [section["title"] for section in review["sections"]]
+        self.assertEqual(
+            titles,
+            [
+                "Average across stored sessions",
+                "Highest session by median log amplitude",
+                "Most recent session",
+            ],
+        )
+        self.assertEqual(review["measure_key"], "median_log_amp")
+        self.assertFalse(review["concerning"])
+        self.assertIsNone(review["care_plan"])
+        self.assertNotIn("Care plan", text)
+        self.assertIn("Summary", text)
+        self.assertIn("inside the comparison line", review["summary"])
 
     def test_trigger_refuses_without_a_band(self) -> None:
         with Session(engine) as session:

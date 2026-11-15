@@ -95,7 +95,7 @@ class ScriptedChatModel(BaseChatModel):
 
     def _reviewer(self, done: list[str], messages: list[BaseMessage]) -> AIMessage:
         if "get_session_facts" not in done:
-            return _call("get_session_facts", {"limit": 12})
+            return _call("get_session_facts", {"limit": 40})
         facts = _facts(_last_tool_text(messages, "get_session_facts"))
         count = facts.get("n_sessions", 0)
         return AIMessage(
@@ -107,7 +107,7 @@ class ScriptedChatModel(BaseChatModel):
 
     def _analyst(self, done: list[str], messages: list[BaseMessage]) -> AIMessage:
         if "get_session_facts" not in done:
-            return _call("get_session_facts", {"limit": 12})
+            return _call("get_session_facts", {"limit": 40})
         return AIMessage(content=compose_analysis(_facts(_last_tool_text(messages, "get_session_facts"))))
 
     def _main(self, done: list[str], messages: list[BaseMessage]) -> AIMessage:

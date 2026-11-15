@@ -13,51 +13,42 @@ type RunView = {
   events: AgentEvent[];
 };
 
-type StoredSession = {
-  id: number;
-  test_type: string;
-  ts_start: string;
-  ts_end: string | null;
-  is_synthetic: boolean;
-  summary: Record<string, unknown> | null;
+type ReviewSection = {
+  id: string;
+  title: string;
+  lines: string[];
 };
 
-function when(iso: string): string {
-  const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime())) {
-    return iso;
+type MovementReview = {
+  measure_label: string;
+  concerning: boolean;
+  sections: ReviewSection[];
+  summary: string;
+  care_plan: string | null;
+};
+
+function isReview(value: unknown): value is MovementReview {
+  if (!value || typeof value !== "object") {
+    return false;
   }
-  return parsed.toLocaleString();
+  const review = value as MovementReview;
+  return Array.isArray(review.sections) && review.sections.length === 3 && typeof review.summary === "string";
 }
 
-function analysisText(run: RunView | null): string {
+function latestAnalysis(run: RunView | null): MovementReview | null {
   const events = run?.events ?? [];
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event.type === "analysis" && typeof event.payload?.text === "string") {
-      return event.payload.text;
+    if (event.type === "analysis" && isReview(event.payload?.review)) {
+      return event.payload.review;
     }
   }
-  return "";
+  return null;
 }
 
 export default function Analysis() {
-  const [sessions, setSessions] = useState<StoredSession[]>([]);
   const [run, setRun] = useState<RunView | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    void fetch("/api/sessions?days=366")
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Session list failed (${response.status})`);
-        }
-        setSessions((await response.json()) as StoredSession[]);
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Cannot reach the backend");
-      });
-  }, []);
 
   useEffect(() => {
     if (!run || run.status === "finished" || run.status === "error" || run.status === "interrupted") {
@@ -91,7 +82,7 @@ export default function Analysis() {
     setRun({ id: created.id, status: "started", events: [] });
   }
 
-  const text = analysisText(run);
+  const review = latestAnalysis(run);
   const running = run !== null && run.status !== "finished" && run.status !== "error" && run.status !== "interrupted";
 
   return (
@@ -112,8 +103,10 @@ export default function Analysis() {
           </p>
         ) : null}
         <p className="text-lg">
-          The analysis reviews stored sessions and cites their numbers. Simulated sessions stay labeled simulated. It
-          does not diagnose and it does not suggest medication.
+          The movement review has three sections: the average across stored sessions, the session with the highest
+          median log amplitude, and the most recent session. A short summary follows. A care plan is shown only when
+          that highest median log amplitude is above the comparison line. It does not diagnose and it does not suggest
+          medication.
         </p>
         <button
           type="button"
@@ -123,32 +116,51 @@ export default function Analysis() {
         >
           {running ? "Analyzing movement" : "Analyze movement"}
         </button>
-        <section className="flex flex-col gap-3">
-          <h2 className="text-2xl font-bold">Movement analysis</h2>
-          {text ? (
-            <pre className="whitespace-pre-wrap rounded-lg border-2 border-[#121212] bg-white px-4 py-3 font-sans text-lg">
-              {text}
-            </pre>
+        <section className="flex flex-col gap-4" aria-labelledby="movement-review">
+          <h2 id="movement-review" className="text-2xl font-bold">
+            Movement review
+          </h2>
+          {review ? (
+            <>
+              {review.sections.map((section) => (
+                <section
+                  key={section.id}
+                  className="flex flex-col gap-2 rounded-lg border-2 border-[#121212] bg-white px-4 py-3"
+                  aria-labelledby={`review-${section.id}`}
+                >
+                  <h3 id={`review-${section.id}`} className="text-xl font-bold">
+                    {section.title}
+                  </h3>
+                  {section.lines.map((line, index) => (
+                    <p key={`${section.id}-${index}`} className="text-lg">
+                      {line}
+                    </p>
+                  ))}
+                </section>
+              ))}
+              <section
+                className="flex flex-col gap-2 rounded-lg border-2 border-[#121212] bg-white px-4 py-3"
+                aria-labelledby="findings-summary"
+              >
+                <h3 id="findings-summary" className="text-xl font-bold">
+                  Summary
+                </h3>
+                <p className="text-lg">{review.summary}</p>
+              </section>
+              {review.care_plan ? (
+                <section
+                  className="flex flex-col gap-2 rounded-lg border-2 border-[#121212] bg-white px-4 py-3"
+                  aria-labelledby="care-plan"
+                >
+                  <h3 id="care-plan" className="text-xl font-bold">
+                    Care plan
+                  </h3>
+                  <p className="text-lg">{review.care_plan}</p>
+                </section>
+              ) : null}
+            </>
           ) : (
             <p className="text-lg">{run ? `Status: ${run.status}` : "No analysis yet."}</p>
-          )}
-        </section>
-        <section className="flex flex-col gap-3">
-          <h2 className="text-2xl font-bold">Stored sessions</h2>
-          {sessions.length === 0 ? (
-            <p className="text-lg">No sessions are stored yet.</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {sessions.map((row) => (
-                <li key={row.id} className="rounded-lg border-2 border-[#121212] bg-white px-4 py-3 text-lg">
-                  <p className="font-semibold">
-                    Session {row.id} · {row.test_type}
-                    {row.is_synthetic ? " · Simulated" : " · Recorded"}
-                  </p>
-                  <p>Started {when(row.ts_start)}.</p>
-                </li>
-              ))}
-            </ul>
           )}
         </section>
       </main>

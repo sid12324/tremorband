@@ -15,13 +15,14 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
+from agent.analysis_text import compose_analysis, review_from_facts
 from agent.mock_model import ScriptedChatModel
 from agent.report_text import DISCLAIMER
-from agent.tools import ANALYSIS_TOOLS, RUN_ID, log_event
+from agent.tools import ANALYSIS_TOOLS, RUN_ID, collect_session_facts, log_event
 from app.db import DATA_DIR
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,9 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = f"""ROLE movement-lead
 You review stored TremorBand sessions and analyze the movement. {DISCLAIMER}
 Delegate to the session reviewer, then to the movement analyst.
+The review has three parts, in this order: the average across stored sessions, the session with the highest median log amplitude, and the most recent session.
+Then write a short summary of those figures.
+Add a care plan only when that highest median log amplitude is above the comparison line. Leave the care plan out otherwise.
 Cite numbers from tool results. Label synthetic sessions as simulated.
 Never diagnose. Never suggest medication.
 Keep the monitoring-aid line in the analysis.
@@ -105,7 +109,11 @@ def build_graph() -> Any:
             "description": "Write a movement analysis that cites the stored session numbers. Never diagnose.",
             "system_prompt": (
                 "ROLE movement-analyst\n"
-                "Call get_session_facts. Write the analysis from those stored numbers. "
+                "Call get_session_facts. From those stored numbers, write three sections in order: "
+                "the average across stored sessions, the session with the highest median log amplitude, "
+                "and the most recent session. Then a short summary. "
+                "Add a care plan only when that highest median log amplitude is above the comparison line. "
+                "Leave the care plan out otherwise. "
                 "Label synthetic sessions as simulated. Never diagnose and never suggest medication. "
                 f"Include this line: {DISCLAIMER} Also include: Monitoring aid, not a diagnosis."
             ),
@@ -138,37 +146,17 @@ def _interrupt_payload(graph: Any, thread_id: str) -> list[dict[str, Any]]:
     return payload
 
 
-def _message_text(message: Any) -> str:
-    content = getattr(message, "content", "")
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict):
-                parts.append(str(block.get("text", "")))
-        return "\n".join(parts)
-    return str(content)
+def _published_analysis() -> tuple[str, dict[str, Any]]:
+    """The page review, drafted from every stored session.
 
-
-def _analysis_from_state(graph: Any, thread_id: str) -> str:
-    """Prefer the message that already carries the monitoring-aid line."""
-    state = graph.get_state(_config(thread_id))
-    messages = (state.values or {}).get("messages") or []
-    best = ""
-    fallback = ""
-    for message in messages:
-        content = redact(_message_text(message))
-        if not content.strip():
-            continue
-        if isinstance(message, AIMessage) and not getattr(message, "tool_calls", None):
-            fallback = content
-        if isinstance(message, ToolMessage) or isinstance(message, AIMessage):
-            if "monitoring aid" in content.lower() and len(content) >= len(best):
-                best = content
-    return best or fallback
+    The movement analyst writes this same review from the session facts.
+    Rebuilding it here keeps the average across every stored session, and
+    keeps the care plan out unless the highest median log amplitude is above
+    the comparison line.
+    """
+    facts = collect_session_facts()
+    review = review_from_facts(facts)
+    return compose_analysis(facts), review
 
 
 def run_thread(thread_id: str, prompt: str) -> dict[str, Any]:
@@ -183,15 +171,14 @@ def run_thread(thread_id: str, prompt: str) -> dict[str, Any]:
             stream_mode="updates",
         ):
             log_event("step", _summarize_chunk(chunk))
-        analysis = _analysis_from_state(graph, thread_id)
-        if analysis:
-            log_event("analysis", {"text": analysis})
+        analysis, review = _published_analysis()
+        log_event("analysis", {"text": analysis, "review": review})
         interrupts = _interrupt_payload(graph, thread_id)
         if interrupts:
             log_event("interrupt", {"interrupts": interrupts})
-            return {"status": "interrupted", "interrupts": interrupts, "analysis": analysis}
+            return {"status": "interrupted", "interrupts": interrupts, "analysis": analysis, "review": review}
         log_event("status", {"phase": "finished"})
-        return {"status": "finished", "interrupts": [], "analysis": analysis}
+        return {"status": "finished", "interrupts": [], "analysis": analysis, "review": review}
     finally:
         RUN_ID.reset(token)
 
