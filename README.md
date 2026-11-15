@@ -2,7 +2,7 @@
 
 TremorBand is a monitoring aid, not a diagnostic device.
 
-The site has two pages. Session turns capture on and off. Each time capture turns on, a new session starts, and windows ingested while it is on belong to that session. Turning it off ends the session. Analysis asks the deep agent in `backend/agent/` to review stored sessions and describe the movement. The analysis cites stored numbers, labels synthetic sessions as simulated, and does not diagnose or suggest medication.
+The site has three pages: Live, Session, and Analysis. Live is the first page. It shows the band, the spectrum, the recent peak-frequency graph, peak Hz, amplitude, and the still, voluntary, or tremor label. Session turns capture on and off. Each time capture turns on, a new session starts, and windows ingested while it is on belong to that session. Turning it off ends the session. Analysis asks the deep agent in `backend/agent/` to review stored sessions and describe the movement. The analysis cites stored numbers, labels synthetic sessions as simulated, and does not diagnose or suggest medication.
 
 Milestone 1 is a local API and a simulated band. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. Milestone 6 trains a small window model on synthetic sessions and exports it to the band. Labels are measurement classes, not a diagnosis.
 
@@ -34,7 +34,7 @@ python scripts/sim_device.py
 
 Optional flags: `--base-url`, `--device-id`, `--peak-hz`, `--amp-deg`, `--hour-seconds`, `--seed`.
 
-## Session and Analysis
+## Live, Session, and Analysis
 
 From `dashboard/`:
 
@@ -43,7 +43,7 @@ npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173 . Session is the on/off control. Analysis reviews the stored sessions.
+Open http://127.0.0.1:5173/#/live . That page is the spectrum, the recent peak-frequency graph, and the still / voluntary / tremor label. Session at http://127.0.0.1:5173/#/session is the on/off control. Analysis at http://127.0.0.1:5173/#/analysis reviews the stored sessions. Opening http://127.0.0.1:5173 with no hash also shows Live.
 
 The API reads two environment variables and nothing else for the model:
 
@@ -251,8 +251,9 @@ Run each `tests.*` module in its own process. They each point `DATABASE_URL` at 
 
 TremorBand is a monitoring aid, not a diagnostic device. Say that at the start and at the end. Do not suggest a dose.
 
-- 0:00 Open http://127.0.0.1:5173/#/session . Read the monitoring-aid line. Turn capture on. A new session starts.
-- 0:30 Let the simulator or the band post windows. Those windows belong to the open session. Turn capture off. The session ends.
+- 0:00 Open http://127.0.0.1:5173/#/live . Read the monitoring-aid line. Point at the spectrum, the recent peak-frequency graph, and the still / voluntary / tremor label.
+- 0:20 Open http://127.0.0.1:5173/#/session . Turn capture on. A new session starts.
+- 0:40 Let the simulator or the band post windows. Those windows belong to the open session. Turn capture off. The session ends.
 - 1:00 Turn capture on again. That is a different session. Turn it off when the second recording is done.
 - 1:20 Open http://127.0.0.1:5173/#/analysis . Point at Simulated on the seeded sessions. Press Analyze movement.
 - 1:40 Read the cited peak, amplitude, and window counts. The text does not diagnose and does not suggest medication.

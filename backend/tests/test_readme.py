@@ -20,9 +20,10 @@ class ReadmeTest(unittest.TestCase):
         self.assertIn("openai:gpt-4o-mini", text)
         self.assertNotIn("you should take", text.lower())
         nav = (ROOT / "dashboard" / "src" / "App.tsx").read_text(encoding="utf-8")
+        self.assertIn('href="#/live"', nav)
         self.assertIn('href="#/session"', nav)
         self.assertIn('href="#/analysis"', nav)
-        for removed in ('href="#/live"', 'href="#/trends"', 'href="#/log"', 'href="#/agent"', 'href="#/report"'):
+        for removed in ('href="#/trends"', 'href="#/log"', 'href="#/agent"', 'href="#/report"'):
             self.assertNotIn(removed, nav)
 
     def test_every_page_renders_the_disclaimer(self) -> None:
