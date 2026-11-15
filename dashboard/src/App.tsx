@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import Analysis from "./pages/Analysis";
+import Live from "./pages/Live";
 import Session from "./pages/Session";
 
-type PageName = "session" | "analysis";
+type PageName = "live" | "session" | "analysis";
 
 function pageFromHash(): PageName {
   const hash = window.location.hash.replace(/^#/, "");
+  if (hash === "/session" || hash === "session") {
+    return "session";
+  }
   if (hash === "/analysis" || hash === "analysis") {
     return "analysis";
   }
-  return "session";
+  return "live";
 }
 
 export default function App() {
@@ -29,6 +33,9 @@ export default function App() {
   return (
     <>
       <nav className="mx-auto flex max-w-6xl flex-wrap gap-2 px-4 pt-6 sm:px-6" aria-label="Pages">
+        <a href="#/live" className={linkClass("live")} aria-current={page === "live" ? "page" : undefined}>
+          Live
+        </a>
         <a href="#/session" className={linkClass("session")} aria-current={page === "session" ? "page" : undefined}>
           Session
         </a>
@@ -40,6 +47,7 @@ export default function App() {
           Analysis
         </a>
       </nav>
+      {page === "live" ? <Live /> : null}
       {page === "session" ? <Session /> : null}
       {page === "analysis" ? <Analysis /> : null}
     </>
