@@ -2,7 +2,7 @@
 
 // ESP32-S3-DevKitC-1. Upload and Serial use the CH343 UART bridge (esptool), not USB-CDC.
 // UART0 is GPIO43 (TX) and GPIO44 (RX).
-// LSM6DS3 I2C is SDA GPIO21 and SCL GPIO22. INT1 is GPIO4.
+// LSM6DS3 I2C is SDA GPIO8 and SCL GPIO9. INT1 is GPIO4.
 // Button GPIO2. Battery sense GPIO34.
 // Firmware LED GPIO13, active low. Motor pin GPIO25.
 // LED, battery, and motor stay off GPIO1, GPIO3, and the I2C pins.
@@ -14,8 +14,8 @@ constexpr float TB_FS_HZ = 104.0f;
 constexpr int TB_WINDOW_N = 256;
 constexpr int TB_HOP = 128;
 
-constexpr int TB_I2C_SDA_PIN = 21;
-constexpr int TB_I2C_SCL_PIN = 22;
+constexpr int TB_I2C_SDA_PIN = 8;
+constexpr int TB_I2C_SCL_PIN = 9;
 constexpr int TB_I2C_HZ = 400000;
 
 constexpr int TB_IMU_INT1_PIN = 4;
