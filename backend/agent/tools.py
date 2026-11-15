@@ -359,17 +359,15 @@ def send_report(report_id: int, recipient: str) -> dict:
     return payload
 
 
-@tool
-def get_session_facts(limit: int = 12) -> dict:
-    """Return stored session measurements. Synthetic sessions are marked simulated. Not a diagnosis."""
+def collect_session_facts(limit: int | None = None) -> dict:
+    """Stored session measurements. `limit` None keeps every session."""
     from app.capture import measurements
 
-    capped = max(1, min(int(limit), 40))
     with Session(engine) as session:
         rows = list(session.exec(select(CaptureSession).order_by(col(CaptureSession.id).desc())))
-        chosen = list(reversed(rows[:capped]))
+        chosen = rows if limit is None else rows[: max(1, min(int(limit), 40))]
         payload_rows = []
-        for row in chosen:
+        for row in reversed(chosen):
             stats = measurements(session, row)
             payload_rows.append(
                 {
@@ -382,8 +380,21 @@ def get_session_facts(limit: int = 12) -> dict:
                     **stats,
                 }
             )
-    payload = {"n_sessions": len(rows), "sessions": payload_rows}
-    log_event("tool", {"name": "get_session_facts", "n_sessions": len(rows), "shown": len(payload_rows)})
+    return {"n_sessions": len(rows), "sessions": payload_rows}
+
+
+@tool
+def get_session_facts(limit: int = 12) -> dict:
+    """Return stored session measurements. Synthetic sessions are marked simulated. Not a diagnosis."""
+    payload = collect_session_facts(limit)
+    log_event(
+        "tool",
+        {
+            "name": "get_session_facts",
+            "n_sessions": payload["n_sessions"],
+            "shown": len(payload["sessions"]),
+        },
+    )
     return payload
 
 
