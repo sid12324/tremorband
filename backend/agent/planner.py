@@ -1,14 +1,10 @@
-"""Care planner graph.
+"""Movement-analysis graph.
 
-`create_deep_agent` pauses before `send_report` and `update_baseline`. The
-resume payload for the installed deepagents 0.7.38 / langchain batched
-interrupt is `{"decisions": [{"type": "approve"|"edit"|"reject", ...}]}`.
-An edit replaces the action:
-
-    {"type": "edit", "edited_action": {"name": "send_report", "args": {...}}}
-
-Subagents do not receive those two tools. Sharing and threshold changes stay
-on the main agent, where the approval interrupt is resumed.
+The deep agent reviews stored sessions and writes an analysis from those
+numbers. It does not diagnose and it does not suggest medication. The model
+name comes from TREMORBAND_MODEL. When that variable is unset and
+OPENAI_API_KEY is set, the model is openai:gpt-4o-mini. With no key, the
+scripted model runs. The key itself is never logged.
 """
 
 from __future__ import annotations
@@ -19,31 +15,32 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.types import Command
 
 from agent.mock_model import ScriptedChatModel
 from agent.report_text import DISCLAIMER
-from agent.tools import (
-    MAIN_TOOLS,
-    READ_TOOLS,
-    RUN_ID,
-    SCHEDULER_TOOLS,
-    WRITER_TOOLS,
-    log_event,
-)
+from agent.tools import ANALYSIS_TOOLS, RUN_ID, log_event
 from app.db import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = f"""ROLE care-planner
-You are the TremorBand care planner. {DISCLAIMER}
-Plan with the to-do tool, then delegate. The trend-analyst compares sessions with the personal baseline. The assessment-scheduler decides whether another guided test is useful. The report-writer drafts the clinician note.
+SYSTEM_PROMPT = f"""ROLE movement-lead
+You review stored TremorBand sessions and analyze the movement. {DISCLAIMER}
+Delegate to the session reviewer, then to the movement analyst.
 Cite numbers from tool results. Label synthetic sessions as simulated.
-Never give medication advice and never diagnose. Recommend discussing the findings with the clinician.
-Only you may call send_report or update_baseline. Wait for the person's approval. Do not ask a subagent to share a note or move a comparison line.
+Never diagnose. Never suggest medication.
+Keep the monitoring-aid line in the analysis.
 """
+
+
+def redact(text: str) -> str:
+    """Remove the API key from text that might be logged."""
+    secret = os.environ.get("OPENAI_API_KEY", "").strip()
+    if secret:
+        return text.replace(secret, "[redacted]")
+    return text
 
 _GRAPH = None
 _SAVER: SqliteSaver | None = None
@@ -51,18 +48,23 @@ _CONN: sqlite3.Connection | None = None
 
 
 def model_name() -> str:
-    """Return the configured model string. `mock` uses the scripted local model."""
-    return os.environ.get("TREMORBAND_MODEL", "mock")
+    """Return the model string. The API key is not part of the result."""
+    chosen = os.environ.get("TREMORBAND_MODEL")
+    if chosen is not None and chosen.strip():
+        return chosen.strip()
+    if os.environ.get("OPENAI_API_KEY", "").strip():
+        return "openai:gpt-4o-mini"
+    return "mock"
 
 
 def _build_model() -> Any:
     name = model_name()
     if name in {"", "mock"}:
-        logger.info("care planner using the scripted model")
+        logger.info("movement analysis using the scripted model")
         return ScriptedChatModel()
     from langchain.chat_models import init_chat_model
 
-    logger.info("care planner using model %s", name)
+    logger.info("movement analysis using model %s", name)
     return init_chat_model(name)
 
 
@@ -87,50 +89,38 @@ def build_graph() -> Any:
     model = _build_model()
     subagents = [
         {
-            "name": "trend-analyst",
-            "description": "Compare recent sessions with the personal baseline and return numeric findings with confidence. Never diagnose.",
+            "name": "session-reviewer",
+            "description": "Read stored session numbers and say which sessions are simulated. Never diagnose.",
             "system_prompt": (
-                "ROLE trend-analyst\n"
-                "Return numeric findings from the tools. Never diagnose and never suggest a dose. "
+                "ROLE session-reviewer\n"
+                "Call get_session_facts. Return the stored numbers. "
+                "Label synthetic sessions as simulated. Never diagnose and never suggest medication. "
                 f"{DISCLAIMER}"
             ),
-            "tools": READ_TOOLS,
+            "tools": ANALYSIS_TOOLS,
             "interrupt_on": {},
         },
         {
-            "name": "assessment-scheduler",
-            "description": "Decide whether another guided test is useful. At most 3 extra tests a day, never during sleep hours, prefer missing test types.",
+            "name": "movement-analyst",
+            "description": "Write a movement analysis that cites the stored session numbers. Never diagnose.",
             "system_prompt": (
-                "ROLE assessment-scheduler\n"
-                "Call plan_tests before trigger_test. Never diagnose and never suggest a dose. "
-                f"{DISCLAIMER}"
+                "ROLE movement-analyst\n"
+                "Call get_session_facts. Write the analysis from those stored numbers. "
+                "Label synthetic sessions as simulated. Never diagnose and never suggest medication. "
+                f"Include this line: {DISCLAIMER} Also include: Monitoring aid, not a diagnosis."
             ),
-            "tools": SCHEDULER_TOOLS,
-            "interrupt_on": {},
-        },
-        {
-            "name": "report-writer",
-            "description": "Draft a one-page clinician note from recorded numbers, including the monitoring-aid line.",
-            "system_prompt": (
-                "ROLE report-writer\n"
-                "Call draft_report. Do not call send_report. Never diagnose and never suggest a dose. "
-                f"{DISCLAIMER}"
-            ),
-            "tools": WRITER_TOOLS,
+            "tools": ANALYSIS_TOOLS,
             "interrupt_on": {},
         },
     ]
     _GRAPH = create_deep_agent(
         model=model,
-        tools=MAIN_TOOLS,
+        tools=ANALYSIS_TOOLS,
         system_prompt=SYSTEM_PROMPT,
         subagents=subagents,
-        interrupt_on={
-            "send_report": {"allowed_decisions": ["approve", "edit", "reject"]},
-            "update_baseline": {"allowed_decisions": ["approve", "reject"]},
-        },
+        interrupt_on={},
         checkpointer=_checkpointer(),
-        name="care-planner",
+        name="movement-analysis",
     )
     return _GRAPH
 
@@ -148,24 +138,60 @@ def _interrupt_payload(graph: Any, thread_id: str) -> list[dict[str, Any]]:
     return payload
 
 
+def _message_text(message: Any) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(str(block.get("text", "")))
+        return "\n".join(parts)
+    return str(content)
+
+
+def _analysis_from_state(graph: Any, thread_id: str) -> str:
+    """Prefer the message that already carries the monitoring-aid line."""
+    state = graph.get_state(_config(thread_id))
+    messages = (state.values or {}).get("messages") or []
+    best = ""
+    fallback = ""
+    for message in messages:
+        content = redact(_message_text(message))
+        if not content.strip():
+            continue
+        if isinstance(message, AIMessage) and not getattr(message, "tool_calls", None):
+            fallback = content
+        if isinstance(message, ToolMessage) or isinstance(message, AIMessage):
+            if "monitoring aid" in content.lower() and len(content) >= len(best):
+                best = content
+    return best or fallback
+
+
 def run_thread(thread_id: str, prompt: str) -> dict[str, Any]:
-    """Run until the graph pauses for approval or finishes."""
+    """Run until the graph finishes or pauses."""
     graph = build_graph()
     token = RUN_ID.set(thread_id)
-    log_event("status", {"phase": "started", "prompt": prompt[:280]})
+    log_event("status", {"phase": "started"})
     try:
         for chunk in graph.stream(
-            {"messages": [HumanMessage(content=prompt)]},
+            {"messages": [HumanMessage(content=redact(prompt))]},
             _config(thread_id),
             stream_mode="updates",
         ):
             log_event("step", _summarize_chunk(chunk))
+        analysis = _analysis_from_state(graph, thread_id)
+        if analysis:
+            log_event("analysis", {"text": analysis})
         interrupts = _interrupt_payload(graph, thread_id)
         if interrupts:
             log_event("interrupt", {"interrupts": interrupts})
-            return {"status": "interrupted", "interrupts": interrupts}
+            return {"status": "interrupted", "interrupts": interrupts, "analysis": analysis}
         log_event("status", {"phase": "finished"})
-        return {"status": "finished", "interrupts": []}
+        return {"status": "finished", "interrupts": [], "analysis": analysis}
     finally:
         RUN_ID.reset(token)
 
@@ -174,7 +200,7 @@ def resume_thread(thread_id: str, decisions: list[dict[str, Any]]) -> dict[str, 
     """Continue a paused run. `decisions` is the batched HITL response."""
     graph = build_graph()
     token = RUN_ID.set(thread_id)
-    log_event("resume", {"decisions": decisions})
+    log_event("resume", {"decisions": redact(str(decisions))[:500]})
     try:
         for chunk in graph.stream(
             Command(resume={"decisions": decisions}),

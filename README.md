@@ -2,7 +2,9 @@
 
 TremorBand is a monitoring aid, not a diagnostic device.
 
-Milestone 1 is a local API, a simulated band, and the Live page. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. Milestone 5 adds the SG90 calibration sketch and the Calibration page. Milestone 6 trains a small window model on synthetic sessions and exports it to the band. Milestone 7 adds personal baselines, a synthetic seven-day log, and the Trends and Log pages. The care planner in `backend/agent/` drafts a clinician note and waits for approval before sharing it. The Tests, Settings, and Clinician pages cover guided tests, export, and a read-only shared-note view. Labels are measurement classes, not a diagnosis. The pages do not suggest a dose.
+The site has two pages. Session turns capture on and off. Each time capture turns on, a new session starts, and windows ingested while it is on belong to that session. Turning it off ends the session. Analysis asks the deep agent in `backend/agent/` to review stored sessions and describe the movement. The analysis cites stored numbers, labels synthetic sessions as simulated, and does not diagnose or suggest medication.
+
+Milestone 1 is a local API and a simulated band. Milestone 2 adds the 104 Hz feature pipeline. Milestone 3 classifies each window as still, voluntary, or tremor and prints one JSON object per window on serial. `backend/app/serial_bridge.py` posts those lines through the same ingest route as HTTP. Milestone 6 trains a small window model on synthetic sessions and exports it to the band. Labels are measurement classes, not a diagnosis.
 
 The simulator posts window features about every 1.2 seconds (104 Hz sampling, 256-sample windows, hop 128). It cycles through still, voluntary movement, and tremor, with a little noise and a slow amplitude envelope.
 
@@ -32,7 +34,7 @@ python scripts/sim_device.py
 
 Optional flags: `--base-url`, `--device-id`, `--peak-hz`, `--amp-deg`, `--hour-seconds`, `--seed`.
 
-## Live page
+## Session and Analysis
 
 From `dashboard/`:
 
@@ -41,7 +43,14 @@ npm install
 npm run dev
 ```
 
-Open http://127.0.0.1:5173 . The page shows band connection, peak Hz, amplitude, and the current window label.
+Open http://127.0.0.1:5173 . Session is the on/off control. Analysis reviews the stored sessions.
+
+The API reads two environment variables and nothing else for the model:
+
+- `OPENAI_API_KEY`
+- `TREMORBAND_MODEL`
+
+If `OPENAI_API_KEY` is set and `TREMORBAND_MODEL` is unset, the model is `openai:gpt-4o-mini`. If `OPENAI_API_KEY` is unset, the API keeps the scripted model and does not call a hosted model. Set `TREMORBAND_MODEL` to a `provider:model` string when you want a different hosted model. Put the key in the environment, not in the repo, and do not log it.
 
 Stop each process with Ctrl+C.
 
@@ -145,21 +154,18 @@ python -m unittest tests.test_analytics
 python scripts/seed_demo.py
 ```
 
-The unit test checks the personal baseline, z-scores, the comparison-line steps, wearing-off bins, symptom-tag association, and window exclusions. `scripts/seed_demo.py` writes seven days for the band `demo-band`. Every session has `is_synthetic` set. Running it again replaces that band, doses marked `synthetic demo`, and notes marked `Synthetic demo`. Other bands stay.
+The unit test checks the personal baseline, z-scores, the comparison-line steps, wearing-off bins, symptom-tag association, and window exclusions. `scripts/seed_demo.py` writes seven days for the band `demo-band`. Every session has `is_synthetic` set, so Analysis labels those sessions simulated. Running it again replaces that band, doses marked `synthetic demo`, and notes marked `Synthetic demo`. Other bands stay.
 
-Open http://127.0.0.1:5173/#/trends for log amplitude, the baseline band, logged-dose markers, hours after a logged dose, tremor hours, and the comparison-line buttons. Open http://127.0.0.1:5173/#/log to save a dose or a symptom rating. Both pages show the monitoring-aid line.
-
-## Care planner
+## Analysis
 
 From `backend/`, with the virtualenv activated and the API already running:
 
 ```bash
 python -m unittest tests.test_agent
+python -m unittest tests.test_capture
 ```
 
-`TREMORBAND_MODEL` defaults to `mock`, which runs the scripted planner and does not call a hosted model. Set it to a `provider:model` string, such as one accepted by LangChain's `init_chat_model`, when you want a hosted model. Put the provider key in the environment, not in the repo.
-
-Open http://127.0.0.1:5173/#/agent and choose Run weekly review. The timeline shows the trend analyst, the scheduler, and the report writer. Sharing the note and moving a comparison line pause until you approve, edit, or reject them on http://127.0.0.1:5173/#/report . The PDF download is on that page. The planner does not suggest a dose.
+Open http://127.0.0.1:5173/#/analysis and choose Analyze movement. The agent cites stored peak, amplitude, and window counts. Synthetic sessions are labeled simulated. The monitoring-aid line stays on the page.
 
 ## Tests, settings, and the clinician view
 
@@ -207,7 +213,7 @@ npm install
 npm run dev
 ```
 
-3. From `backend/`, with the virtualenv activated, start the simulated band and, when you want the Trends page filled, the synthetic week:
+3. From `backend/`, with the virtualenv activated, export `OPENAI_API_KEY` only if you want the hosted model. Leave `TREMORBAND_MODEL` unset to use `openai:gpt-4o-mini` when that key is present. With no key, the scripted model stays in use. Then start the simulated band and, when you want stored sessions to review, the synthetic week:
 
 ```bash
 python scripts/sim_device.py
@@ -245,10 +251,9 @@ Run each `tests.*` module in its own process. They each point `DATABASE_URL` at 
 
 TremorBand is a monitoring aid, not a diagnostic device. Say that at the start and at the end. Do not suggest a dose.
 
-- 0:00 Open http://127.0.0.1:5173/#/ . Point at the band status, the peak, and the still / voluntary / tremor label.
-- 0:20 Open http://127.0.0.1:5173/#/trends . Show the synthetic badge, the log-amplitude band, and the sentence that compares 3 to 5 hours after a logged dose with the first 2 hours.
-- 0:45 Open http://127.0.0.1:5173/#/tests . Start Rest and let the countdown move. Mention taps per second and gait asymmetry on the result cards.
-- 1:05 Open http://127.0.0.1:5173/#/agent and press Run weekly review. Wait until the note asks for approval.
-- 1:30 Open http://127.0.0.1:5173/#/report . Read the monitoring-aid line, then Approve or Reject. Download the PDF if there is time.
-- 1:50 Open http://127.0.0.1:5173/#/clinician and show that only a shared note appears there.
+- 0:00 Open http://127.0.0.1:5173/#/session . Read the monitoring-aid line. Turn capture on. A new session starts.
+- 0:30 Let the simulator or the band post windows. Those windows belong to the open session. Turn capture off. The session ends.
+- 1:00 Turn capture on again. That is a different session. Turn it off when the second recording is done.
+- 1:20 Open http://127.0.0.1:5173/#/analysis . Point at Simulated on the seeded sessions. Press Analyze movement.
+- 1:40 Read the cited peak, amplitude, and window counts. The text does not diagnose and does not suggest medication.
 - 2:00 Repeat the monitoring-aid line.

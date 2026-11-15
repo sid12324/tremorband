@@ -359,7 +359,36 @@ def send_report(report_id: int, recipient: str) -> dict:
     return payload
 
 
+@tool
+def get_session_facts(limit: int = 12) -> dict:
+    """Return stored session measurements. Synthetic sessions are marked simulated. Not a diagnosis."""
+    from app.capture import measurements
+
+    capped = max(1, min(int(limit), 40))
+    with Session(engine) as session:
+        rows = list(session.exec(select(CaptureSession).order_by(col(CaptureSession.id).desc())))
+        chosen = list(reversed(rows[:capped]))
+        payload_rows = []
+        for row in chosen:
+            stats = measurements(session, row)
+            payload_rows.append(
+                {
+                    "id": row.id,
+                    "test_type": row.test_type,
+                    "is_synthetic": row.is_synthetic,
+                    "data_label": "simulated" if row.is_synthetic else "recorded",
+                    "ts_start": as_utc(row.ts_start).isoformat() if as_utc(row.ts_start) else None,
+                    "ts_end": as_utc(row.ts_end).isoformat() if as_utc(row.ts_end) else None,
+                    **stats,
+                }
+            )
+    payload = {"n_sessions": len(rows), "sessions": payload_rows}
+    log_event("tool", {"name": "get_session_facts", "n_sessions": len(rows), "shown": len(payload_rows)})
+    return payload
+
+
 READ_TOOLS = [get_metrics, get_passive_summary, get_medications, get_symptoms]
 SCHEDULER_TOOLS = [get_metrics, get_passive_summary, plan_tests, trigger_test, wait_for_session]
 WRITER_TOOLS = [get_metrics, get_passive_summary, get_medications, get_symptoms, draft_report]
 MAIN_TOOLS = READ_TOOLS + [plan_tests, trigger_test, wait_for_session, update_baseline, draft_report, send_report]
+ANALYSIS_TOOLS = [get_session_facts]

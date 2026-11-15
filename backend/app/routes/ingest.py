@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
 
+from app.capture import allows_device, assign_open_session
 from app.db import get_session
 from app.live import live_hub
 from app.models import CaptureSession, Device, PassiveSummary, Window
@@ -100,9 +101,10 @@ def _apply_session(
 
 
 def _apply_window(session: Session, device_id: str, item: WindowIn) -> Window:
+    item.session_id = assign_open_session(session, item.session_id)
     if item.session_id is not None:
         recording = session.get(CaptureSession, item.session_id)
-        if recording is None or recording.device_id != device_id:
+        if recording is None or not allows_device(recording, device_id):
             raise HTTPException(status_code=404, detail=f"session {item.session_id} not found")
     row = Window(
         device_id=device_id,
@@ -143,6 +145,7 @@ def _apply_passive(session: Session, device_id: str, item: PassiveIn) -> Passive
 def ingest(body: IngestBody, session: Session = Depends(get_session)) -> IngestResult:
     """Store a batch and broadcast each new window on the live stream."""
     device = _upsert_device(session, body.device_id, body.device_name)
+    session.flush()
     session_ids: list[int] = []
     window_rows: list[tuple[Window, WindowIn]] = []
     passive_ids: list[int] = []

@@ -1,4 +1,4 @@
-"""Care planner tools and the approval interrupt, with the scripted model."""
+"""Movement analysis and model selection, with the scripted model."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ os.environ["TREMORBAND_MODEL"] = "mock"
 
 from sqlmodel import Session  # noqa: E402
 
-from agent.planner import resume_thread, run_thread  # noqa: E402
+from agent.mock_model import ScriptedChatModel  # noqa: E402
+from agent.planner import _build_model, model_name, redact, run_thread  # noqa: E402
 from agent.tools import _in_sleep, plan_extra_tests, trigger_test  # noqa: E402
 from app.db import engine, init_db  # noqa: E402
-from app.models import Report  # noqa: E402
 from app.pdf_note import note_pdf  # noqa: E402
 from scripts.seed_demo import seed_database  # noqa: E402
 
@@ -34,6 +34,35 @@ class PlannerRuleTest(unittest.TestCase):
         self.assertIn(b"monitoring aid", blob)
 
 
+class ModelSelectionTest(unittest.TestCase):
+    def tearDown(self) -> None:
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ["TREMORBAND_MODEL"] = "mock"
+
+    def test_no_key_keeps_the_scripted_model(self) -> None:
+        os.environ.pop("OPENAI_API_KEY", None)
+        os.environ.pop("TREMORBAND_MODEL", None)
+        self.assertEqual(model_name(), "mock")
+        os.environ["TREMORBAND_MODEL"] = ""
+        self.assertEqual(model_name(), "mock")
+
+    def test_key_selects_gpt_4o_mini_when_model_is_unset(self) -> None:
+        os.environ.pop("TREMORBAND_MODEL", None)
+        os.environ["OPENAI_API_KEY"] = "unit-test-key"
+        self.assertEqual(model_name(), "openai:gpt-4o-mini")
+        self.assertNotIn("unit-test-key", model_name())
+
+    def test_explicit_model_wins(self) -> None:
+        os.environ["OPENAI_API_KEY"] = "unit-test-key"
+        os.environ["TREMORBAND_MODEL"] = "mock"
+        self.assertEqual(model_name(), "mock")
+        with self.assertLogs("agent.planner", level="INFO") as logs:
+            model = _build_model()
+        self.assertIsInstance(model, ScriptedChatModel)
+        self.assertNotIn("unit-test-key", "\n".join(logs.output))
+        self.assertEqual(redact("prefix unit-test-key suffix"), "prefix [redacted] suffix")
+
+
 class PlannerRunTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -41,60 +70,18 @@ class PlannerRunTest(unittest.TestCase):
         with Session(engine) as session:
             seed_database(session, reset=True)
 
-    def test_weekly_review_pauses_before_sending(self) -> None:
-        result = run_thread("weekly-1", "Run the weekly review.")
-        self.assertEqual(result["status"], "interrupted")
-        action = result["interrupts"][0]["value"]["action_requests"][0]
-        self.assertEqual(action["name"], "send_report")
-        report_id = action["args"]["report_id"]
-        with Session(engine) as session:
-            report = session.get(Report, report_id)
-            self.assertIsNotNone(report)
-            assert report is not None
-            self.assertEqual(report.status, "draft")
-            self.assertIn("TremorBand is a monitoring aid, not a diagnostic device.", report.markdown)
-            self.assertIn("Monitoring aid, not a diagnosis.", report.markdown)
-            self.assertNotIn("you should", report.markdown.lower())
-        edited = resume_thread(
-            "weekly-1",
-            [
-                {
-                    "type": "edit",
-                    "edited_action": {
-                        "name": "send_report",
-                        "args": {"report_id": report_id, "recipient": "clinic desk"},
-                    },
-                }
-            ],
-        )
-        self.assertEqual(edited["status"], "finished")
-        with Session(engine) as session:
-            report = session.get(Report, report_id)
-            assert report is not None
-            self.assertEqual(report.status, "sent")
-            self.assertEqual(report.recipient, "clinic desk")
-
-    def test_threshold_change_waits_for_approval(self) -> None:
-        paused = run_thread("threshold-1", "Please move the comparison line.")
-        self.assertEqual(paused["status"], "interrupted")
-        action = paused["interrupts"][0]["value"]["action_requests"][0]
-        self.assertEqual(action["name"], "update_baseline")
-        rejected = resume_thread("threshold-1", [{"type": "reject", "message": "Leave the line where it is."}])
-        self.assertEqual(rejected["status"], "finished")
-        from app.models import Baseline
-
-        with Session(engine) as session:
-            baseline = session.get(Baseline, "rest")
-            assert baseline is not None
-            self.assertAlmostEqual(baseline.threshold_z, 2.0)
-        paused_again = run_thread("threshold-2", "Please move the comparison line.")
-        approved = resume_thread("threshold-2", [{"type": "approve"}])
-        self.assertEqual(paused_again["status"], "interrupted")
-        self.assertEqual(approved["status"], "finished")
-        with Session(engine) as session:
-            baseline = session.get(Baseline, "rest")
-            assert baseline is not None
-            self.assertAlmostEqual(baseline.threshold_z, 2.5)
+    def test_analysis_cites_stored_numbers(self) -> None:
+        result = run_thread("analysis-1", "Review the stored sessions and analyze the movement.")
+        self.assertEqual(result["status"], "finished")
+        text = result["analysis"]
+        lowered = text.lower()
+        self.assertIn("TremorBand is a monitoring aid, not a diagnostic device.", text)
+        self.assertIn("Monitoring aid, not a diagnosis.", text)
+        self.assertIn("simulated", lowered)
+        self.assertIn("5.00", text)
+        self.assertNotIn("you should", lowered)
+        for banned in ("prescribe", "milligram", "levodopa", "increase the dose"):
+            self.assertNotIn(banned, lowered)
 
     def test_trigger_refuses_without_a_band(self) -> None:
         with Session(engine) as session:

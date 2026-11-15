@@ -25,7 +25,10 @@ router = APIRouter(prefix="/api", tags=["planner"])
 class RunIn(BaseModel):
     """Start a care-planner thread."""
 
-    prompt: str = Field(default="Run the weekly review.", max_length=2000)
+    prompt: str = Field(
+        default="Review the stored sessions and analyze the movement.",
+        max_length=2000,
+    )
 
 
 class DecisionIn(BaseModel):
@@ -92,10 +95,12 @@ def _safe_call(target, thread_id: str, payload) -> None:
         else:
             resume_thread(thread_id, payload)
     except Exception as exc:
-        logger.exception("care planner run %s failed", thread_id)
+        from agent.planner import redact
+
+        logger.error("movement analysis run %s failed: %s", thread_id, redact(str(exc))[:400])
         token = RUN_ID.set(thread_id)
         try:
-            log_event("status", {"phase": "error", "message": str(exc)[:400]})
+            log_event("status", {"phase": "error", "message": redact(str(exc))[:400]})
         finally:
             RUN_ID.reset(token)
 
@@ -105,7 +110,7 @@ def start_run(body: RunIn) -> dict[str, str]:
     """Start a weekly review or a chat turn. Events stream on the run id."""
     run_id = str(uuid.uuid4())
     threading.Thread(target=_safe_call, args=("run", run_id, body.prompt), name=f"planner-{run_id[:8]}", daemon=True).start()
-    logger.info("care planner started %s", run_id)
+    logger.info("movement analysis started %s", run_id)
     return {"id": run_id, "thread_id": run_id, "status": "started"}
 
 
