@@ -104,9 +104,9 @@ export default function Analysis() {
         ) : null}
         <p className="text-lg">
           The movement review has three sections: the average across stored sessions, the session with the highest
-          median log amplitude, and the most recent session. A short summary follows. A care plan is shown only when
-          that highest median log amplitude is above the comparison line. It does not diagnose and it does not suggest
-          medication.
+          median log amplitude, and the most recent session. The summary then covers the recorded results, how the
+          signal compares with this person's stored sessions, and the trend across sessions. A care plan is shown only
+          when that highest median log amplitude is above the comparison line.
         </p>
         <button
           type="button"

@@ -2,9 +2,10 @@
 
 The review has three sections: the average across the stored sessions, the
 session with the highest median log amplitude, and the most recent session.
-A short summary follows. A care plan is included only when that highest
-median log amplitude is above the comparison line. The text does not diagnose
-and it does not suggest medication. Synthetic sessions are called simulated.
+The summary then states the recorded results, how strong that signal is
+beside this person's own sessions, and the trend across sessions over time.
+A care plan is included only when that highest median log amplitude is above
+the comparison line. Synthetic sessions are called simulated.
 """
 
 from __future__ import annotations
@@ -20,6 +21,10 @@ from app.analytics import DEFAULT_THRESHOLD_Z, above_threshold, z_score
 # metrics already compare sessions by median log amplitude.
 HIGHEST_FIELD = "median_log_amp"
 HIGHEST_LABEL = "median log amplitude"
+
+# Half-to-half changes smaller than this stay "about the same".
+_TREND_LOG_AMP = 0.05
+_TREND_HZ = 0.25
 
 # key, label, average digits, session digits, suffix
 _MEASURES = (
@@ -131,6 +136,151 @@ def _session_lines(row: dict[str, Any] | None, empty: str) -> list[str]:
     return lines
 
 
+def _ordered(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(sessions, key=_order_key)
+
+
+def _series(sessions: list[dict[str, Any]], key: str) -> list[float]:
+    values: list[float] = []
+    for row in _ordered(sessions):
+        number = _float(row.get(key))
+        if number is not None:
+            values.append(number)
+    return values
+
+
+def _half_means(values: list[float]) -> tuple[float, float] | None:
+    if len(values) < 2:
+        return None
+    split = len(values) // 2
+    early = values[:split]
+    late = values[split:]
+    return sum(early) / len(early), sum(late) / len(late)
+
+
+def _direction(delta: float, step: float, higher: str, lower: str, same: str) -> str:
+    if delta > step:
+        return higher
+    if delta < -step:
+        return lower
+    return same
+
+
+def _results_sentence(sessions: list[dict[str, Any]], amps: list[float]) -> str:
+    parts = [f"{len(sessions)} stored sessions."]
+    if amps:
+        parts.append(f"Average {HIGHEST_LABEL} is {sum(amps) / len(amps):.2f}.")
+    else:
+        parts.append(f"Average {HIGHEST_LABEL} is not stored.")
+    peaks = _series(sessions, "median_peak_hz")
+    if peaks:
+        parts.append(f"Average median peak is {sum(peaks) / len(peaks):.2f} Hz.")
+    else:
+        parts.append("Average median peak is not stored.")
+    shares = _series(sessions, "tremor_pct")
+    if shares:
+        parts.append(f"Average tremor share is {sum(shares) / len(shares):.1f}%.")
+    return " ".join(parts)
+
+
+def _signal_detail(row: dict[str, Any]) -> str:
+    bits = [f"{HIGHEST_LABEL} {_num(row.get(HIGHEST_FIELD), 2)}"]
+    peak = _float(row.get("median_peak_hz"))
+    if peak is not None:
+        bits.append(f"median peak {_num(peak, 2)} Hz")
+    amp = _float(row.get("median_amp_deg"))
+    if amp is not None:
+        bits.append(f"median amplitude {_num(amp, 2)} deg")
+    return ", ".join(bits)
+
+
+def _strength_sentence(
+    highest: dict[str, Any] | None,
+    score: float | None,
+    concerning: bool,
+) -> str:
+    if highest is None:
+        return (
+            f"No stored session has a {HIGHEST_LABEL}, so there is no strongest signal "
+            "to set beside this person's other sessions."
+        )
+    lead = (
+        f"The strongest stored signal is session {highest.get('id')} "
+        f"({highest.get('test_type') or 'not stored'}, {_label(highest)}), "
+        f"with {_signal_detail(highest)}."
+    )
+    if score is None:
+        return (
+            lead + " There are not enough differing amplitudes to place that session "
+            "against this person's other stored sessions."
+        )
+    side = "above" if score >= 0 else "below"
+    place = (
+        f"That amplitude is {abs(score):.2f} standard deviations {side} this person's own average, "
+        f"{'past' if concerning else 'inside'} the comparison line of {DEFAULT_THRESHOLD_Z:.2f}."
+    )
+    if concerning:
+        reading = " Relative to their stored sessions, that signal is the concerning one."
+    else:
+        reading = " Relative to their stored sessions, that signal stays within the usual spread."
+    return f"{lead} {place}{reading}"
+
+
+def _recent_sentence(recent: dict[str, Any] | None, highest: dict[str, Any] | None) -> str:
+    if recent is None:
+        return ""
+    same = (
+        highest is not None
+        and _session_id(recent) == _session_id(highest)
+        and _session_id(recent) != 0
+    )
+    if same:
+        return "The most recent session is that same session."
+    return (
+        f"The most recent session is session {recent.get('id')} "
+        f"({recent.get('test_type') or 'not stored'}, {_label(recent)}), with {_signal_detail(recent)}."
+    )
+
+
+def _trend_sentence(sessions: list[dict[str, Any]]) -> str:
+    amps = _series(sessions, HIGHEST_FIELD)
+    halves = _half_means(amps)
+    if halves is None:
+        trend = (
+            "Fewer than two stored median log amplitudes are on record, "
+            "so there is no amplitude trend across sessions yet."
+        )
+    else:
+        early, late = halves
+        direction = _direction(
+            late - early,
+            _TREND_LOG_AMP,
+            "higher in the later sessions than in the earlier ones",
+            "lower in the later sessions than in the earlier ones",
+            "about the same from the earlier sessions to the later ones",
+        )
+        trend = (
+            "Across sessions over time, median log amplitude averages "
+            f"{early:.2f} in the earlier sessions and {late:.2f} in the later sessions, "
+            f"so the recorded amplitude is {direction}."
+        )
+    peaks = _series(sessions, "median_peak_hz")
+    peak_halves = _half_means(peaks)
+    if peak_halves is None:
+        return trend
+    early_hz, late_hz = peak_halves
+    if abs(late_hz - early_hz) <= _TREND_HZ:
+        frequency = f" Median peak frequency stays near {late_hz:.2f} Hz across those sessions."
+    else:
+        frequency_direction = "higher" if late_hz > early_hz else "lower"
+        frequency = (
+            " Median peak frequency averages "
+            f"{early_hz:.2f} Hz in the earlier sessions and {late_hz:.2f} Hz in the later sessions, "
+            f"so the recorded frequency is {frequency_direction} later."
+        )
+    return trend + frequency
+
+
 def _summary(
     sessions: list[dict[str, Any]],
     amps: list[float],
@@ -139,46 +289,18 @@ def _summary(
     score: float | None,
     concerning: bool,
 ) -> str:
-    closing = (
-        "These figures describe stored movement. "
-        "They are not a diagnosis and they do not suggest medication."
-    )
     if not sessions:
-        return f"No sessions are stored yet. {closing}"
-    parts = [f"{len(sessions)} stored sessions."]
-    if amps:
-        parts.append(f"Average {HIGHEST_LABEL} is {sum(amps) / len(amps):.2f}.")
-    else:
-        parts.append(f"Average {HIGHEST_LABEL} is not stored.")
-    if highest is None:
-        parts.append(f"No stored session has a {HIGHEST_LABEL}.")
-    else:
-        parts.append(
-            f"The highest {HIGHEST_LABEL} is {_num(highest.get(HIGHEST_FIELD), 2)} "
-            f"in session {highest.get('id')} ({highest.get('test_type') or 'not stored'}, {_label(highest)})."
+        return (
+            "No sessions are stored yet. There is no recorded signal to compare "
+            "with this person's sessions and no trend across sessions."
         )
-        if score is None:
-            parts.append("There are not enough differing values to place that session against the comparison line.")
-        elif concerning:
-            parts.append(
-                f"That value is {score:.2f} standard deviations above the average, "
-                f"past the comparison line of {DEFAULT_THRESHOLD_Z:.2f}."
-            )
-        else:
-            parts.append(
-                f"That value is {score:.2f} standard deviations above the average, "
-                f"inside the comparison line of {DEFAULT_THRESHOLD_Z:.2f}."
-            )
-    if recent is not None:
-        if highest is not None and _session_id(recent) == _session_id(highest) and _session_id(recent) != 0:
-            parts.append("The most recent session is that same session.")
-        else:
-            parts.append(
-                f"The most recent session is session {recent.get('id')} "
-                f"({recent.get('test_type') or 'not stored'}, {_label(recent)})."
-            )
-    parts.append(closing)
-    return " ".join(parts)
+    parts = [
+        _results_sentence(sessions, amps),
+        _strength_sentence(highest, score, concerning),
+        _recent_sentence(recent, highest),
+        _trend_sentence(sessions),
+    ]
+    return " ".join(part for part in parts if part)
 
 
 def _care_plan(highest: dict[str, Any], score: float) -> str:
