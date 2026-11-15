@@ -189,11 +189,11 @@ python -m unittest tests.test_movement
 | LSM6DS3 SCL | GPIO22 | 400 kHz I2C, with SDA |
 | LSM6DS3 INT1 | GPIO4 | Optional data-ready interrupt |
 | Button | GPIO2 | INPUT_PULLUP. Long press is longer than 1.5 s |
-| Battery sense | GPIO34 | ADC1, input only. Two 220 kOhm resistors. The divider pin is `TB_BATTERY_PIN` in `config.h` |
-| Firmware LED | GPIO13 | Active low. GPIO1 and GPIO3 stay with the micro-USB serial bridge |
+| Battery sense | GPIO34 | Two 220 kOhm resistors. The divider pin is `TB_BATTERY_PIN` in `config.h` |
+| Firmware LED | GPIO13 | Active low. The CH343 UART bridge is UART0: GPIO43 TX, GPIO44 RX |
 | Rig servo | Pin 9 on the servo board | Separate 5 V supply and a common ground |
 
-The band board is an ESP32 DevKit V1 (WROOM-32, micro-USB). The wrist IMU is an LSM6DS3 on GPIO21 (SDA) and GPIO22 (SCL). `TB_IMU_DRIVER=TB_IMU_MPU6050` selects the MPU6050 fallback. This band has no vibration motor. The same names live in `firmware/band/include/config.h`.
+The band board is an ESP32-S3-DevKitC-1. The USB chip is a CH343, so flashing and the serial log use UART (esptool), not native USB-CDC. The wrist IMU is an LSM6DS3 on GPIO21 (SDA) and GPIO22 (SCL). `TB_IMU_DRIVER=TB_IMU_MPU6050` selects the MPU6050 fallback. This band has no vibration motor. The same names live in `firmware/band/include/config.h`.
 
 ## Setup
 

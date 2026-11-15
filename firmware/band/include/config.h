@@ -1,9 +1,11 @@
 #pragma once
 
-// ESP32 DevKit V1 (WROOM-32, micro-USB).
+// ESP32-S3-DevKitC-1. Upload and Serial use the CH343 UART bridge (esptool), not USB-CDC.
+// UART0 is GPIO43 (TX) and GPIO44 (RX).
 // LSM6DS3 I2C is SDA GPIO21 and SCL GPIO22. INT1 is GPIO4.
-// Button GPIO2. Battery sense GPIO34 (ADC1, input only).
-// Firmware LED GPIO13, active low. GPIO1 and GPIO3 stay with the USB serial bridge.
+// Button GPIO2. Battery sense GPIO34.
+// Firmware LED GPIO13, active low. Motor pin GPIO25.
+// LED, battery, and motor stay off GPIO1, GPIO3, and the I2C pins.
 // No vibration motor.
 
 // One sample-rate constant for the firmware. ml/features.py uses the same 104.0.
