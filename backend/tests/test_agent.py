@@ -139,6 +139,54 @@ class ReviewShapeTest(unittest.TestCase):
         self.assertFalse(review["concerning"])
         self.assertIsNone(review["care_plan"])
         self.assertIn("No sessions are stored yet.", review["summary"])
+        self.assertNotIn("diagnosis", review["summary"].lower())
+        self.assertNotIn("medication", review["summary"].lower())
+
+    def test_summary_states_results_strength_and_trend(self) -> None:
+        sessions = [_session(1, 0.0, 8), _session(2, 0.1, 9), _session(3, 0.2, 10)]
+        review = review_from_facts({"n_sessions": 3, "sessions": sessions})
+        summary = review["summary"]
+        lowered = summary.lower()
+        self.assertIn("Average median log amplitude is 0.10.", summary)
+        self.assertIn("Average median peak is 4.00 Hz.", summary)
+        self.assertIn("Average tremor share is 25.0%.", summary)
+        self.assertIn("session 3", summary)
+        self.assertIn("inside the comparison line", summary)
+        self.assertIn("within the usual spread", summary)
+        self.assertIn("higher in the later sessions", summary)
+        self.assertIn("Median peak frequency stays near 4.00 Hz", summary)
+        self.assertNotIn("diagnosis", lowered)
+        self.assertNotIn("medication", lowered)
+        self.assertNotIn("parkinson", lowered)
+
+    def test_summary_names_a_falling_trend(self) -> None:
+        sessions = [_session(1, 1.0, 8), _session(2, 0.2, 9)]
+        sessions[1]["median_peak_hz"] = 6.0
+        summary = review_from_facts({"n_sessions": 2, "sessions": sessions})["summary"]
+        self.assertIn("lower in the later sessions", summary)
+        self.assertIn("recorded frequency is higher later", summary)
+        self.assertIn("session 2", summary.lower())
+        self.assertNotIn("diagnosis", summary.lower())
+        self.assertNotIn("medication", summary.lower())
+
+    def test_summary_calls_a_flat_trend_about_the_same(self) -> None:
+        sessions = [_session(1, 0.40, 8), _session(2, 0.42, 10)]
+        summary = review_from_facts({"n_sessions": 2, "sessions": sessions})["summary"]
+        self.assertIn("about the same from the earlier sessions to the later ones", summary)
+
+    def test_concerning_summary_stays_on_the_signal(self) -> None:
+        sessions = [_session(index, 0.0, index) for index in range(1, 6)]
+        sessions.append(_session(6, 0.0, 9))
+        sessions[2]["median_log_amp"] = 3.0
+        sessions[2]["ts_start"] = "2026-01-01T03:00:00+00:00"
+        review = review_from_facts({"n_sessions": len(sessions), "sessions": sessions})
+        summary = review["summary"].lower()
+        self.assertIn("past the comparison line", summary)
+        self.assertIn("concerning", summary)
+        self.assertIn("lower in the later sessions", summary)
+        self.assertNotIn("diagnosis", summary)
+        self.assertNotIn("medication", summary)
+        self.assertNotIn("parkinson", summary)
 
 
 class PlannerRunTest(unittest.TestCase):
@@ -176,6 +224,9 @@ class PlannerRunTest(unittest.TestCase):
         self.assertNotIn("Care plan", text)
         self.assertIn("Summary", text)
         self.assertIn("inside the comparison line", review["summary"])
+        self.assertIn("Across sessions over time", review["summary"])
+        self.assertNotIn("diagnosis", review["summary"].lower())
+        self.assertNotIn("medication", review["summary"].lower())
 
     def test_trigger_refuses_without_a_band(self) -> None:
         with Session(engine) as session:

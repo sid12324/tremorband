@@ -165,7 +165,7 @@ python -m unittest tests.test_agent
 python -m unittest tests.test_capture
 ```
 
-Open http://127.0.0.1:5173/#/analysis and choose Analyze movement. The movement review has three sections, in order: the average across stored sessions, the session with the highest median log amplitude, and the most recent session. A short summary follows. A care plan is shown only when that highest median log amplitude is above the comparison line of 2 standard deviations. Synthetic sessions are labeled simulated. The monitoring-aid line stays on the page. The review does not diagnose and does not suggest medication.
+Open http://127.0.0.1:5173/#/analysis and choose Analyze movement. The movement review has three sections, in order: the average across stored sessions, the session with the highest median log amplitude, and the most recent session. The summary then covers the recorded results, how strong the signal looks beside this person's stored sessions, and the trend across sessions. A care plan is shown only when that highest median log amplitude is above the comparison line of 2 standard deviations. Synthetic sessions are labeled simulated. The monitoring-aid banner stays on the page.
 
 ## Tests, settings, and the clinician view
 
@@ -256,5 +256,5 @@ TremorBand is a monitoring aid, not a diagnostic device. Say that at the start a
 - 0:40 Let the simulator or the band post windows. Those windows belong to the open session. Turn capture off. The session ends.
 - 1:00 Turn capture on again. That is a different session. Turn it off when the second recording is done.
 - 1:20 Open http://127.0.0.1:5173/#/analysis . Press Analyze movement.
-- 1:40 Read the average, the highest session by median log amplitude, and the most recent session, then the summary. A care plan is on the page only when that highest value is above the comparison line. The text does not diagnose and does not suggest medication.
+- 1:40 Read the average, the highest session by median log amplitude, and the most recent session, then the summary of the results, how the signal compares with the stored sessions, and the trend. A care plan is on the page only when that highest value is above the comparison line.
 - 2:00 Repeat the monitoring-aid line.

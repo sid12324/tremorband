@@ -31,7 +31,9 @@ SYSTEM_PROMPT = f"""ROLE movement-lead
 You review stored TremorBand sessions and analyze the movement. {DISCLAIMER}
 Delegate to the session reviewer, then to the movement analyst.
 The review has three parts, in this order: the average across stored sessions, the session with the highest median log amplitude, and the most recent session.
-Then write a short summary of those figures.
+Then write a summary of the recorded results, how strong or concerning the signal is relative to this person's stored sessions, and the trend across sessions over time.
+Compare amplitude and frequency with their own sessions. Do not name a disease.
+Do not put a diagnosis disclaimer or a medication disclaimer in that summary.
 Add a care plan only when that highest median log amplitude is above the comparison line. Leave the care plan out otherwise.
 Cite numbers from tool results. Label synthetic sessions as simulated.
 Never diagnose. Never suggest medication.
@@ -111,7 +113,10 @@ def build_graph() -> Any:
                 "ROLE movement-analyst\n"
                 "Call get_session_facts. From those stored numbers, write three sections in order: "
                 "the average across stored sessions, the session with the highest median log amplitude, "
-                "and the most recent session. Then a short summary. "
+                "and the most recent session. Then a summary of the recorded results, how strong or "
+                "concerning the signal is relative to this person's stored sessions, and the trend across "
+                "sessions over time. Compare amplitude and frequency with their own sessions. Do not name a disease. "
+                "Do not put a diagnosis disclaimer or a medication disclaimer in that summary. "
                 "Add a care plan only when that highest median log amplitude is above the comparison line. "
                 "Leave the care plan out otherwise. "
                 "Label synthetic sessions as simulated. Never diagnose and never suggest medication. "
