@@ -15,7 +15,15 @@ class ReadmeTest(unittest.TestCase):
             self.assertIn(heading, text)
         self.assertIn("EI_CLASSIFIER_TFLITE_ENABLE_ESP_NN 0", text)
         self.assertIn("TremorBand is a monitoring aid, not a diagnostic device.", text)
+        self.assertIn("OPENAI_API_KEY", text)
+        self.assertIn("TREMORBAND_MODEL", text)
+        self.assertIn("openai:gpt-4o-mini", text)
         self.assertNotIn("you should take", text.lower())
+        nav = (ROOT / "dashboard" / "src" / "App.tsx").read_text(encoding="utf-8")
+        self.assertIn('href="#/session"', nav)
+        self.assertIn('href="#/analysis"', nav)
+        for removed in ('href="#/live"', 'href="#/trends"', 'href="#/log"', 'href="#/agent"', 'href="#/report"'):
+            self.assertNotIn(removed, nav)
 
     def test_every_page_renders_the_disclaimer(self) -> None:
         pages = list((ROOT / "dashboard" / "src" / "pages").glob("*.tsx"))

@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.db import init_db
 from app.live import live_hub
-from app.routes import analytics, devices, ingest, live, planner, records, rig
+from app.routes import analytics, capture, devices, ingest, live, planner, records, rig
 
 logging.basicConfig(
     level=logging.INFO,
@@ -76,6 +76,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(ingest.router)
+app.include_router(capture.router)
 app.include_router(devices.router)
 app.include_router(live.router)
 app.include_router(rig.router)
@@ -92,10 +93,10 @@ def health() -> dict[str, str]:
 
 @app.get("/")
 def root() -> dict[str, str]:
-    """Point a browser at the Live page and restate the disclaimer."""
+    """Point a browser at the Session page and restate the disclaimer."""
     return {
         "service": "tremorband",
         "disclaimer": DISCLAIMER,
-        "live_page": "http://127.0.0.1:5173",
+        "session_page": "http://127.0.0.1:5173",
         "docs": "/docs",
     }
